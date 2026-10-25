@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.TVDeck" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/tv_bg</item>
+        <item name="android:statusBarColor">@color/tv_bg</item>
+        <item name="android:navigationBarColor">@color/tv_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
