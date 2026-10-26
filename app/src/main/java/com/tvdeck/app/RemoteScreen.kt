@@ -16,14 +16,20 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -38,12 +44,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -52,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,56 +69,111 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 @Composable
 fun RemoteScreen() {
     val cs = MaterialTheme.colorScheme
     var padMode by rememberSaveable { mutableStateOf(true) }
     var typing by rememberSaveable { mutableStateOf(false) }
+    var speedMenu by remember { mutableStateOf(false) }
+    val fast = AdbManager.inject != Inject.INPUT
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // ── header ──
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Remote", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    if (AdbManager.isConnected) AdbManager.deviceName else "Not connected",
-                    fontSize = 12.sp, color = cs.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(8.dp).clip(CircleShape)
+                            .background(if (AdbManager.isConnected) Color(0xFF22C55E) else cs.error)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (AdbManager.isConnected) AdbManager.deviceName else "Not connected",
+                        fontSize = 12.sp, color = cs.onSurfaceVariant
+                    )
+                }
             }
-            FilterChip(
-                selected = padMode, onClick = { padMode = true }, label = { Text("Touchpad") },
-                leadingIcon = { Icon(Icons.Default.TouchApp, null, Modifier.size(18.dp)) }
+            Box {
+                AssistChip(
+                    onClick = { speedMenu = true },
+                    label = { Text(if (fast) "Fast" else "Standard") },
+                    leadingIcon = { Icon(Icons.Default.FlashOn, null, Modifier.size(18.dp)) }
+                )
+                DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Auto (recommended)") },
+                        trailingIcon = { if (AdbManager.injectPref == "auto") Icon(Icons.Default.Check, null) },
+                        onClick = { speedMenu = false; AdbManager.setInjectPref("auto") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Compatible (slower)") },
+                        trailingIcon = { if (AdbManager.injectPref == "compatible") Icon(Icons.Default.Check, null) },
+                        onClick = { speedMenu = false; AdbManager.setInjectPref("compatible") }
+                    )
+                }
+            }
+        }
+        if (AdbManager.isConnected && !fast) {
+            Text(
+                "This TV only allows standard input, so buttons can take about a second. Everything still works.",
+                fontSize = 11.sp, color = cs.onSurfaceVariant
             )
-            Spacer(Modifier.width(8.dp))
-            FilterChip(selected = !padMode, onClick = { padMode = false }, label = { Text("D-pad") })
         }
 
+        // ── power & volume ──
         Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             KeyBtn(26, Modifier.weight(1f).fillMaxHeight(), tint = cs.error) { Icon(Icons.Default.PowerSettingsNew, "Power") }
             KeyBtn(164, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.VolumeOff, "Mute") }
             KeyBtn(25, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeDown, "Volume down") }
             KeyBtn(24, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeUp, "Volume up") }
         }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Volume controls", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+            listOf("device" to "Fire TV / Device", "tv" to "TV", "both" to "Both").forEach { (k, l) ->
+                FilterChip(
+                    selected = AdbManager.volumeMode == k,
+                    onClick = { AdbManager.setVolumeMode(k) },
+                    label = { Text(l, fontSize = 11.sp) }
+                )
+            }
+        }
 
+        // ── pad ──
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = padMode, onClick = { padMode = true }, label = { Text("Touchpad") },
+                leadingIcon = { Icon(Icons.Default.TouchApp, null, Modifier.size(18.dp)) }
+            )
+            FilterChip(selected = !padMode, onClick = { padMode = false }, label = { Text("D-pad") })
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (padMode) Touchpad(Modifier.fillMaxSize()) else DPad(Modifier.fillMaxSize())
         }
 
-        Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // ── media ──
+        Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KeyBtn(88, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.SkipPrevious, "Previous") }
             KeyBtn(89, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.FastRewind, "Rewind") }
             KeyBtn(85, Modifier.weight(1.3f).fillMaxHeight(), accent = true) { Icon(Icons.Default.PlayCircle, "Play or pause") }
@@ -119,11 +181,14 @@ fun RemoteScreen() {
             KeyBtn(87, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.SkipNext, "Next") }
         }
 
-        Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // ── navigation ──
+        Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KeyBtn(4, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.ArrowBack, "Back") }
             KeyBtn(3, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Home, "Home") }
             KeyBtn(82, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Menu, "Menu") }
-            KeyBtn(176, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Settings, "Settings") }
+            ActionBtn(onClick = { AdbManager.openSettings() }, modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Icon(Icons.Default.Settings, "Settings")
+            }
             ActionBtn(onClick = { typing = !typing }, modifier = Modifier.weight(1f).fillMaxHeight(), selected = typing) {
                 Icon(Icons.Default.Keyboard, "Keyboard")
             }
@@ -137,54 +202,94 @@ fun RemoteScreen() {
 private fun Touchpad(modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
+    var finger by remember { mutableStateOf<Offset?>(null) }
+    var flashCode by remember { mutableStateOf(0) }
+    var flashAt by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(flashAt) {
+        if (flashCode != 0) {
+            delay(150)
+            flashCode = 0
+        }
+    }
+
+    fun fire(code: Int) {
+        AdbManager.sendKey(code)
+        flashCode = code
+        flashAt = System.nanoTime()
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     Box(
         modifier
             .clip(RoundedCornerShape(32.dp))
             .background(cs.surfaceVariant)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        AdbManager.sendKey(23)
+                    onPress = {
+                        finger = it
+                        tryAwaitRelease()
+                        finger = null
                     },
+                    onTap = { fire(23) },
                     onLongPress = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         AdbManager.sendKey(4)
+                        flashCode = 4
+                        flashAt = System.nanoTime()
                     }
                 )
             }
             .pointerInput(Unit) {
-                val step = 64.dp.toPx()
+                val base = 46.dp.toPx()
                 var ax = 0f
                 var ay = 0f
                 detectDragGestures(
-                    onDragStart = { ax = 0f; ay = 0f },
+                    onDragStart = { finger = it; ax = 0f; ay = 0f },
+                    onDragEnd = { finger = null },
+                    onDragCancel = { finger = null },
                     onDrag = { change, drag ->
                         change.consume()
+                        finger = change.position
+                        val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
+                        val speed = hypot(drag.x, drag.y) / dt
+                        val step = base * (if (speed > 2.5f) 0.55f else if (speed > 1.2f) 0.75f else 1f)
                         ax += drag.x
                         ay += drag.y
                         while (abs(ax) >= step || abs(ay) >= step) {
                             if (abs(ax) >= abs(ay)) {
-                                if (ax > 0) { AdbManager.sendKey(22); ax -= step } else { AdbManager.sendKey(21); ax += step }
+                                if (ax > 0) { fire(22); ax -= step } else { fire(21); ax += step }
                                 ay = 0f
                             } else {
-                                if (ay > 0) { AdbManager.sendKey(20); ay -= step } else { AdbManager.sendKey(19); ay += step }
+                                if (ay > 0) { fire(20); ay -= step } else { fire(19); ay += step }
                                 ax = 0f
                             }
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                     }
                 )
             },
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.KeyboardArrowUp, null, Modifier.align(Alignment.TopCenter).padding(12.dp).size(36.dp).alpha(0.35f))
-        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.align(Alignment.BottomCenter).padding(12.dp).size(36.dp).alpha(0.35f))
-        Icon(Icons.Default.KeyboardArrowLeft, null, Modifier.align(Alignment.CenterStart).padding(12.dp).size(36.dp).alpha(0.35f))
-        Icon(Icons.Default.KeyboardArrowRight, null, Modifier.align(Alignment.CenterEnd).padding(12.dp).size(36.dp).alpha(0.35f))
+        Icon(Icons.Default.KeyboardArrowUp, null, Modifier.align(Alignment.TopCenter).padding(12.dp).size(38.dp).alpha(if (flashCode == 19) 1f else 0.3f))
+        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.align(Alignment.BottomCenter).padding(12.dp).size(38.dp).alpha(if (flashCode == 20) 1f else 0.3f))
+        Icon(Icons.Default.KeyboardArrowLeft, null, Modifier.align(Alignment.CenterStart).padding(12.dp).size(38.dp).alpha(if (flashCode == 21) 1f else 0.3f))
+        Icon(Icons.Default.KeyboardArrowRight, null, Modifier.align(Alignment.CenterEnd).padding(12.dp).size(38.dp).alpha(if (flashCode == 22) 1f else 0.3f))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Swipe to move", fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant)
-            Text("Tap = OK   ·   Hold = Back", fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f))
+            Text(
+                if (flashCode == 23) "Select" else if (flashCode == 4) "Back" else "Swipe to move",
+                fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant
+            )
+            Text("Tap = select   ·   Hold = back", fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f))
+        }
+        val f = finger
+        if (f != null) {
+            Box(
+                Modifier
+                    .offset { IntOffset((f.x - 30.dp.toPx()).roundToInt(), (f.y - 30.dp.toPx()).roundToInt()) }
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(cs.primary.copy(alpha = 0.28f))
+            )
         }
     }
 }

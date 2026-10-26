@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -137,8 +138,9 @@ fun KeyBtn(
         tint != Color.Unspecified -> tint
         else -> cs.onSurfaceVariant
     }
+    val scale by animateFloatAsState(if (pressed) 0.93f else 1f, label = "press")
     Surface(
-        modifier = modifier.pointerInput(code, repeat) {
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale }.pointerInput(code, repeat) {
             detectTapGestures(onPress = {
                 pressed = true
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

@@ -39,8 +39,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AdbManager.init(this)
         Store.load(this)
+        AdbManager.init(this)
+        AppMeta.init(this)
         handleShare(intent)
         setContent {
             TvDeckTheme {

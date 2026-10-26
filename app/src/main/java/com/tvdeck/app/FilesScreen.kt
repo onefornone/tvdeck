@@ -131,13 +131,21 @@ fun FilesScreen() {
         loading = true
         error = ""
         try {
-            val out = AdbManager.shell("ls -lA ${shq(path)}")
-            val list = parseLs(out)
-            entries = list
+            val out = AdbManager.shell("ls -lA ${shq(path)} 2>&1")
+            var list = parseLs(out)
             if (list.isEmpty()) {
-                val t = out.trim()
-                if (t.isNotEmpty() && !t.startsWith("total")) error = t
+                // Some TVs print `ls -l` in an unusual format: fall back to plain names.
+                val alt = AdbManager.shell("ls -1Ap ${shq(path)} 2>&1")
+                val names = alt.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                if (names.isNotEmpty() && names.none { it.startsWith("ls:") }) {
+                    list = names.map { n -> FileEntry(n.trimEnd('/'), n.endsWith("/"), null, "") }
+                        .sortedWith(compareBy<FileEntry>({ !it.isDir }, { it.name.lowercase() }))
+                } else {
+                    val t = (if (names.isNotEmpty()) alt else out).trim()
+                    if (t.isNotEmpty() && !t.startsWith("total")) error = t
+                }
             }
+            entries = list
         } catch (e: Exception) {
             entries = emptyList()
             error = e.message ?: "Couldn't read this folder"
@@ -309,7 +317,7 @@ private fun FileRow(e: FileEntry, onOpen: () -> Unit, onAction: (String) -> Unit
             IconBadge(icon, tint, size = 40.dp)
             Column(Modifier.weight(1f)) {
                 Text(e.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val sub = (if (e.isDir) "Folder" else e.size?.let { formatSize(it) } ?: "File") + "  ·  " + e.date
+                val sub = (if (e.isDir) "Folder" else e.size?.let { formatSize(it) } ?: "File") + (if (e.date.isBlank()) "" else "  ·  " + e.date)
                 Text(sub, fontSize = 11.sp, color = cs.onSurfaceVariant)
             }
             Box {

@@ -41,6 +41,9 @@ object Store {
         get() = prefs?.getString("last", "") ?: ""
         set(v) { prefs?.edit()?.putString("last", v)?.apply() }
 
+    fun getPref(key: String, def: String): String = prefs?.getString("pref_$key", def) ?: def
+    fun setPref(key: String, value: String) { prefs?.edit()?.putString("pref_$key", value)?.apply() }
+
     private fun clean(s: String) = s.replace("\t", " ").replace("\n", " ").trim()
 
     private fun persist() {

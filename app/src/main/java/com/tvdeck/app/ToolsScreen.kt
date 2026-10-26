@@ -175,7 +175,9 @@ private fun ToolsHome(open: (String) -> Unit) {
                                 try {
                                     AdbManager.shell("pkill -f 'tvdeck_[s]leep' || true")
                                     AdbManager.shell("nohup sh -c 'sleep ${mins * 60}; input keyevent 223 #tvdeck_sleep' >/dev/null 2>&1 &")
-                                    Shared.say("TV will go to sleep in $label")
+                                    val check = AdbManager.shell("pgrep -f 'tvdeck_[s]leep' 2>&1").trim()
+                                    if (check.isEmpty() || check.contains("not found", true)) Shared.say("Timer set for $label (couldn't verify on this TV)")
+                                    else Shared.say("TV will go to sleep in $label")
                                 } catch (e: Exception) { Shared.say(e.message ?: "Failed") }
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text(label) }
