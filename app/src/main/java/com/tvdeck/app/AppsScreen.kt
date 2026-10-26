@@ -94,7 +94,7 @@ private fun parsePkgs(out: String): List<Pair<String, String>> =
         if (eq > 0) body.substring(eq + 1) to body.substring(0, eq) else body to ""
     }
 
-private suspend fun loadApps() = coroutineScope {
+suspend fun loadApps() = coroutineScope {
     val u = async { AdbManager.shell("pm list packages -f -3") }
     val s = async { AdbManager.shell("pm list packages -f -s") }
     val d = async { AdbManager.shell("pm list packages -d") }
@@ -103,6 +103,7 @@ private suspend fun loadApps() = coroutineScope {
     val sys = parsePkgs(s.await()).map { AppItem(it.first, true, it.first in disabled, it.second) }
     AppsCache.apps = (user + sys).distinctBy { it.pkg }
     AppsCache.loaded = true
+    AppMeta.prefetch(AppsCache.apps.filter { !it.system })
 }
 
 private fun nameOf(pkg: String): String = AppMeta.labels[pkg]?.takeIf { it.isNotBlank() } ?: prettyName(pkg)
@@ -119,6 +120,7 @@ fun AppsScreen() {
     var loading by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<String>() }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
+    var headerMenu by remember { mutableStateOf(false) }
     val apps = AppsCache.apps
 
     fun reload() {
@@ -208,6 +210,24 @@ fun AppsScreen() {
                 }
                 if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 else IconButton(onClick = { reload() }) { Icon(Icons.Default.Refresh, "Reload") }
+                Box {
+                    IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                    DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Fetch names & icons online") },
+                            trailingIcon = { Checkbox(checked = AppMeta.online, onCheckedChange = null) },
+                            onClick = { AppMeta.changeOnline(!AppMeta.online) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Reload all icons") },
+                            onClick = {
+                                headerMenu = false
+                                AppMeta.clearCache()
+                                AppMeta.prefetch(AppsCache.apps.filter { !it.system })
+                            }
+                        )
+                    }
+                }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -259,7 +279,7 @@ fun AppsScreen() {
             items(shown, key = { it.pkg }) { app ->
                 DisposableEffect(app.pkg) {
                     AppMeta.request(app)
-                    onDispose { AppMeta.cancel(app.pkg) }
+                    onDispose { }
                 }
                 AppRow(
                     app = app,

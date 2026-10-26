@@ -74,6 +74,14 @@ object AdbManager {
     var tvWidth = 1920
     var tvHeight = 1080
 
+    // device (system) volume, read from the TV
+    var volume by mutableStateOf(-1)
+    var volumeMin by mutableStateOf(0)
+    var volumeMax by mutableStateOf(15)
+    private var volReadAt = 0L
+    private var volSetOk = true
+    private var volVerified = false
+
     // input settings (shown in the Remote tab)
     var inject by mutableStateOf(Inject.INPUT)
     var injectPref by mutableStateOf("auto")      // auto | compatible
@@ -256,10 +264,13 @@ object AdbManager {
     private fun probeInput() {
         plan = detectPlan()
         cmdInputOk = try { shellBlocking("cmd input keyevent 0 2>&1").isBlank() } catch (e: Exception) { false }
-        val a = try { shellBlocking("cmd media_session volume --stream 3 --adj same 2>&1") } catch (e: Exception) { "error" }
-        volStyle = if (errorLine(a) == null) 0 else {
-            val b = try { shellBlocking("media volume --stream 3 --adj same 2>&1") } catch (e: Exception) { "error" }
-            if (errorLine(b) == null) 1 else 2
+        volSetOk = true
+        volVerified = false
+        volume = -1
+        volStyle = when {
+            readVolumeVia(0) -> 0
+            readVolumeVia(1) -> 1
+            else -> { readVolumeDumpsys(); 2 }
         }
         chooseMode()
     }
@@ -293,12 +304,84 @@ object AdbManager {
         return "sendevent $d 1 $linux 1; sendevent $d 0 0 0; sendevent $d 1 $linux 0; sendevent $d 0 0 0"
     }
 
-    private fun volCmd(code: Int): String {
-        val dir = if (code == 24) "raise" else "lower"
-        return when (volStyle) {
-            0 -> "cmd media_session volume --show --stream 3 --adj $dir"
-            1 -> "media volume --show --stream 3 --adj $dir"
-            else -> "input keyevent $code"
+    // ───────────── device volume (what Fire TV shows as its volume bar) ─────────────
+    private val volRe = Regex("volume is (\\d+) in range \\[(\\d+)\\.\\.(\\d+)\\]")
+
+    private fun readVolumeVia(style: Int): Boolean {
+        val cmd = if (style == 0) "cmd media_session volume --get --stream 3 2>&1" else "media volume --get --stream 3 2>&1"
+        val o = try { shellBlocking(cmd) } catch (e: Exception) { return false }
+        val m = volRe.find(o) ?: return false
+        volume = m.groupValues[1].toInt()
+        volumeMin = m.groupValues[2].toInt()
+        volumeMax = m.groupValues[3].toInt().coerceAtLeast(1)
+        volReadAt = SystemClock.elapsedRealtime()
+        return true
+    }
+
+    private fun readVolumeDumpsys() {
+        val o = try { shellBlocking("dumpsys audio 2>&1") } catch (e: Exception) { return }
+        val start = o.indexOf("- STREAM_MUSIC:")
+        if (start < 0) return
+        var end = o.indexOf("- STREAM_", start + 10)
+        if (end < 0) end = minOf(o.length, start + 4000)
+        val block = o.substring(start, end)
+        val max = Regex("Max:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
+        val min = Regex("Min:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val cur = Regex("Current:(.*)").find(block)?.groupValues?.get(1) ?: return
+        val pairs = Regex("\\((\\w+)\\):\\s*(\\d+)").findAll(cur).map { it.groupValues[1] to it.groupValues[2].toInt() }.toList()
+        val pick = pairs.firstOrNull { it.first == "hdmi" } ?: pairs.firstOrNull { it.first == "speaker" } ?: pairs.firstOrNull()
+        if (pick != null) {
+            volume = pick.second
+            volumeMin = min
+            if (max != null) volumeMax = max.coerceAtLeast(1)
+            volReadAt = SystemClock.elapsedRealtime()
+        }
+    }
+
+    /** Re-reads the TV's volume (used to keep the slider correct). */
+    suspend fun refreshVolume() = withContext(Dispatchers.IO) {
+        if (!isConnected || volStyle > 1) return@withContext
+        readVolumeVia(volStyle)
+    }
+
+    private fun setVolumeBlocking(t: Int) {
+        val cmd = if (volStyle == 1) "media volume --show --stream 3 --set $t" else "cmd media_session volume --show --stream 3 --set $t"
+        shellBlocking(cmd)
+        volume = t
+        volReadAt = SystemClock.elapsedRealtime()
+    }
+
+    /** Moves the device volume by [delta] steps. Falls back to volume keys if setting isn't possible. */
+    private fun adjustDevice(delta: Int) {
+        if (delta == 0) return
+        val now = SystemClock.elapsedRealtime()
+        if (volStyle <= 1 && (volume < 0 || now - volReadAt > 6000)) readVolumeVia(volStyle)
+        if (volStyle <= 1 && volume >= 0 && volSetOk) {
+            val t = (volume + delta).coerceIn(volumeMin, volumeMax)
+            if (t != volume) {
+                setVolumeBlocking(t)
+                if (!volVerified) {
+                    volVerified = true
+                    readVolumeVia(volStyle)
+                    if (volume != t) volSetOk = false
+                }
+            }
+            if (volSetOk) return
+        }
+        val k = if (delta > 0) 24 else 25
+        shellBlocking(buildCommand(List(minOf(kotlin.math.abs(delta), 6)) { k }))
+    }
+
+    /** Set the device volume to an exact level (slider). */
+    fun setVolumeTo(level: Int) {
+        val t = level.coerceIn(volumeMin, volumeMax)
+        volume = t
+        ioScope.launch {
+            try {
+                if (volStyle <= 1) setVolumeBlocking(t)
+            } catch (e: Exception) {
+                Shared.say(e.message ?: "Couldn't change volume")
+            }
         }
     }
 
@@ -314,7 +397,7 @@ object AdbManager {
             codes = ArrayList()
         }
         for (t in batch) {
-            if (t < 0) { flushCodes(); parts.add(volCmd(-t)); continue }
+            if (t < 0) continue
             val seq = if (inject == Inject.SENDEVENT) sendeventFor(t) else null
             if (seq != null) { flushCodes(); parts.add(seq) } else codes.add(t)
         }
@@ -339,15 +422,23 @@ object AdbManager {
                 }
                 pending.addAndGet(-batch.size)
                 try {
-                    val out = shellBlocking(buildCommand(batch))
-                    val low = out.lowercase()
-                    val broken = (inject == Inject.SENDEVENT && (low.contains("sendevent") || low.contains("/dev/input"))) ||
-                        (inject == Inject.CMD && (low.contains("find service") || low.contains("unknown")))
-                    if (broken) {
-                        inject = Inject.INPUT
-                        Shared.say("Fast input isn't supported on this TV. Switched to Compatible mode.")
-                        shellBlocking(buildCommand(batch))
+                    var volDelta = 0
+                    for (t in batch) {
+                        if (t == -24) volDelta++ else if (t == -25) volDelta--
                     }
+                    val normal = batch.filter { it > 0 }
+                    if (normal.isNotEmpty()) {
+                        val out = shellBlocking(buildCommand(normal))
+                        val low = out.lowercase()
+                        val broken = (inject == Inject.SENDEVENT && (low.contains("sendevent") || low.contains("/dev/input"))) ||
+                            (inject == Inject.CMD && (low.contains("find service") || low.contains("unknown")))
+                        if (broken) {
+                            inject = Inject.INPUT
+                            Shared.say("Fast input isn't supported on this TV. Switched to Compatible mode.")
+                            shellBlocking(buildCommand(normal))
+                        }
+                    }
+                    if (volDelta != 0) adjustDevice(volDelta)
                 } catch (e: Exception) {
                     if (Shared.message == null) Shared.say(e.message ?: "Couldn't send key")
                 }
@@ -431,6 +522,50 @@ object AdbManager {
                 Shared.say("Recording failed: ${e.message}")
             }
             recording = false
+        }
+    }
+
+    // ───────────── on-TV cursor helper ─────────────
+    const val HELPER_PKG = "com.tvdeck.helper"
+
+    fun helperBundled(): Boolean = try { context.assets.open("tvhelper.apk").close(); true } catch (e: Exception) { false }
+
+    /** Installs and switches on the cursor helper on the TV. Returns an error message, or null when it works. */
+    suspend fun setupCursorHelper(onStep: (String) -> Unit): String? = withContext(Dispatchers.IO) {
+        try {
+            if (!isConnected) return@withContext "Connect to a TV first."
+            if (!helperBundled()) {
+                return@withContext "This build of TVDeck doesn't include the cursor helper. Check the build log step \"Build TV cursor helper\"."
+            }
+            onStep("Checking the TV…")
+            val installed = shellBlocking("pm list packages $HELPER_PKG").contains("package:$HELPER_PKG")
+            if (!installed) {
+                onStep("Installing the helper on your TV…")
+                val f = File(context.cacheDir, "tvhelper.apk")
+                context.assets.open("tvhelper.apk").use { i -> f.outputStream().use { i.copyTo(it) } }
+                conn().install(f)
+            }
+            onStep("Switching it on…")
+            shellBlocking("am start -n $HELPER_PKG/.MainActivity 2>&1")
+            val svc = "$HELPER_PKG/$HELPER_PKG.CursorService"
+            val cur = shellBlocking("settings get secure enabled_accessibility_services").trim()
+            val list = when {
+                cur.isBlank() || cur == "null" -> svc
+                cur.split(":").contains(svc) -> cur
+                else -> "$cur:$svc"
+            }
+            shellBlocking("settings put secure enabled_accessibility_services $list")
+            shellBlocking("settings put secure accessibility_enabled 1")
+            onStep("Connecting…")
+            var ok = false
+            for (i in 0 until 8) {
+                delay(700)
+                if (CursorClient.check()) { ok = true; break }
+            }
+            if (ok) null
+            else "The helper is installed but didn't start. On the TV open Settings > Accessibility and switch on \"TVDeck Cursor\", then try again."
+        } catch (e: Exception) {
+            "Setup failed: ${e.message}"
         }
     }
 

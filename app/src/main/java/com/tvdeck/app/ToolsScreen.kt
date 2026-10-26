@@ -55,6 +55,7 @@ fun ToolsScreen() {
         "info" -> InfoTool { sub = "" }
         "live" -> LiveViewTool { sub = "" }
         "tune" -> TuneTool { sub = "" }
+        "debloat" -> DebloatTool { sub = "" }
         else -> ToolsHome { sub = it }
     }
 }
@@ -100,6 +101,7 @@ private fun ToolsHome(open: (String) -> Unit) {
         Tool("live", "Live view", "See and tap the TV screen", Icons.Default.Cast, Color(0xFF7C3AED)),
         Tool("shell", "Shell", "Run commands, save shortcuts", Icons.Default.Code, Color(0xFF475569)),
         Tool("info", "Device info", "Storage, memory, network", Icons.Default.Info, Color(0xFF0284C7)),
+        Tool("debloat", "Smart debloater", "Turn off apps you don't need", Icons.Default.DeleteSweep, Color(0xFF16A34A)),
         Tool("tune", "Speed & display", "Free memory, animations", Icons.Default.Tune, Color(0xFF059669)),
         Tool("link", "Open link on TV", "Send a URL or video", Icons.Default.Link, Color(0xFFD97706)),
         Tool("sleep", "Sleep timer", "Turn the TV off later", Icons.Default.NightsStay, Color(0xFF6366F1)),
@@ -336,7 +338,7 @@ private fun InstallTool(onBack: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SubHeader("Install apps", onBack)
         TvCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -357,6 +359,7 @@ private fun InstallTool(onBack: () -> Unit) {
                 Text("Selected files are parts of ONE app (split APKs)", fontSize = 12.sp, modifier = Modifier.weight(1f))
             }
         }
+        LinkInstallCard()
         if (busy) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(progress, fontSize = 13.sp)

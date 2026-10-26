@@ -47,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +74,12 @@ private val GUIDE = listOf(
 
 @Composable
 fun DevicesScreen() {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    DisposableEffect(Unit) {
+        Discovery.start(ctx)
+        onDispose { Discovery.stop() }
+    }
     var msg by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
     var scanned by remember { mutableStateOf(false) }
@@ -167,10 +174,11 @@ fun DevicesScreen() {
         }
 
         item {
-            SectionTitle("Nearby") {
+            SectionTitle("Nearby TVs") {
                 FilledTonalButton(onClick = {
                     scope.launch {
                         scanning = true
+                        Discovery.start(ctx)
                         found = try { AdbManager.scan() } catch (e: Exception) { emptyList() }
                         scanning = false
                         scanned = true
@@ -178,31 +186,45 @@ fun DevicesScreen() {
                 }, enabled = !scanning) {
                     Icon(if (scanning) Icons.Default.Refresh else Icons.Default.Search, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (scanning) "Scanning…" else "Scan Wi-Fi")
+                    Text(if (scanning) "Searching…" else "Search again")
                 }
             }
         }
 
-        if (scanning) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        if (scanning || Discovery.running && Discovery.found.isEmpty()) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
 
-        if (scanned && !scanning && found.isEmpty()) {
+        items(Discovery.found, key = { "tv-" + it.host }) { tv ->
+            val ready = Discovery.adbReady[tv.host]
+            DeviceRow(
+                title = tv.name,
+                subtitle = tv.kind + "  ·  " + tv.host + when (ready) {
+                    true -> "  ·  debugging on"
+                    false -> "  ·  debugging off"
+                    null -> ""
+                },
+                active = AdbManager.isConnected && AdbManager.deviceHost == tv.host,
+                onClick = { if (!AdbManager.connecting) connectTo(tv.name, tv.host, tv.port) }
+            ) {}
+        }
+
+        val extra = found.filter { ip -> Discovery.found.none { it.host == ip } }
+        items(extra, key = { "ip-$it" }) { host ->
+            DeviceRow(
+                title = host,
+                subtitle = "Found on your Wi-Fi  ·  debugging on",
+                active = AdbManager.isConnected && AdbManager.deviceHost == host,
+                onClick = { if (!AdbManager.connecting) connectTo("", host, 5555) }
+            ) {}
+        }
+
+        if (!scanning && Discovery.found.isEmpty() && extra.isEmpty() && scanned) {
             item {
                 Text(
-                    "No TV found. Make sure debugging is switched on, or add the TV by its IP address.",
+                    "No TV found. Make sure the TV is on and on the same Wi-Fi, or add it by its IP address.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-
-        items(found, key = { "found-$it" }) { host ->
-            val saved = Store.devices.any { it.host == host }
-            DeviceRow(
-                title = host,
-                subtitle = if (saved) "Saved TV" else "Tap to connect",
-                active = AdbManager.isConnected && AdbManager.deviceHost == host,
-                onClick = { if (!AdbManager.connecting) connectTo("", host, 5555) }
-            ) {}
         }
 
         item {

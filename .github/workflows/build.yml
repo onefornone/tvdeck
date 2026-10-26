@@ -17,8 +17,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.7
-      - name: Build release APK
-        run: gradle assembleRelease --no-daemon
+      - name: Build TV cursor helper
+        continue-on-error: true
+        run: gradle :helper:assembleRelease --no-daemon
+      - name: Bundle helper into the app
+        run: |
+          mkdir -p app/src/main/assets
+          if [ -f helper/build/outputs/apk/release/helper-release.apk ]; then
+            cp helper/build/outputs/apk/release/helper-release.apk app/src/main/assets/tvhelper.apk
+            echo "Helper bundled."
+          else
+            echo "Helper APK not found - the app will build without the on-TV cursor."
+          fi
+      - name: Build TVDeck release APK
+        run: gradle :app:assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: TVDeck-apk

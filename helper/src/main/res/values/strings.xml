@@ -1,0 +1,3 @@
+<resources>
+    <string name="service_desc">Shows a mouse cursor on the TV and performs taps for the TVDeck phone app.</string>
+</resources>

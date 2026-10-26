@@ -1,6 +1,7 @@
 package com.tvdeck.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,7 +15,6 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -24,7 +24,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.core.content.IntentCompat
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         Store.load(this)
         AdbManager.init(this)
         AppMeta.init(this)
-        handleShare(intent)
+        handleIncoming(intent)
         setContent {
             TvDeckTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -52,11 +52,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleShare(i: Intent?) {
-        if (i != null && i.action == Intent.ACTION_SEND && i.type?.startsWith("text/") == true) {
-            val t = i.getStringExtra(Intent.EXTRA_TEXT) ?: return
-            val m = Regex("https?://\\S+").find(t)
-            Shared.pendingLink = m?.value ?: t.trim()
+    /** Things shared to TVDeck from other apps: links, text, files, APKs. */
+    private fun handleIncoming(i: Intent?) {
+        if (i == null) return
+        when (i.action) {
+            Intent.ACTION_SEND -> {
+                val stream = IntentCompat.getParcelableExtra(i, Intent.EXTRA_STREAM, Uri::class.java)
+                if (stream != null) {
+                    Shared.pendingFiles = listOf(stream)
+                } else {
+                    val t = i.getStringExtra(Intent.EXTRA_TEXT) ?: return
+                    val m = Regex("https?://\\S+").find(t)
+                    if (m != null) Shared.pendingLink = m.value else Shared.pendingText = t.trim()
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list = IntentCompat.getParcelableArrayListExtra(i, Intent.EXTRA_STREAM, Uri::class.java)
+                if (list != null && list.isNotEmpty()) Shared.pendingFiles = list.toList()
+            }
+            Intent.ACTION_VIEW -> {
+                val d = i.data
+                if (d != null) Shared.pendingFiles = listOf(d)
+            }
         }
     }
 }
@@ -128,19 +145,5 @@ fun TvDeckApp() {
         }
     }
 
-    Shared.pendingLink?.let { link ->
-        AlertDialog(
-            onDismissRequest = { Shared.pendingLink = null },
-            title = { Text("Open on your TV?") },
-            text = { Text(link) },
-            confirmButton = {
-                TextButton(onClick = {
-                    Shared.pendingLink = null
-                    if (!AdbManager.isConnected) Shared.say("Connect to a TV first")
-                    else AdbManager.runBg("am start -a android.intent.action.VIEW -d ${shq(link)}", "Sent to TV")
-                }) { Text("Open") }
-            },
-            dismissButton = { TextButton(onClick = { Shared.pendingLink = null }) { Text("Cancel") } }
-        )
-    }
+    IncomingDialogs()
 }

@@ -2,8 +2,11 @@
 
 package com.tvdeck.app
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Send
@@ -48,16 +52,20 @@ import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,8 +78,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +90,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -90,7 +99,7 @@ import kotlin.math.roundToInt
 @Composable
 fun RemoteScreen() {
     val cs = MaterialTheme.colorScheme
-    var padMode by rememberSaveable { mutableStateOf(true) }
+    var padMode by rememberSaveable { mutableStateOf(1) } // 0 cursor, 1 swipe, 2 d-pad
     var typing by rememberSaveable { mutableStateOf(false) }
     var speedMenu by remember { mutableStateOf(false) }
     val fast = AdbManager.inject != Inject.INPUT
@@ -149,27 +158,26 @@ fun RemoteScreen() {
             KeyBtn(25, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeDown, "Volume down") }
             KeyBtn(24, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeUp, "Volume up") }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Volume controls", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
-            listOf("device" to "Fire TV / Device", "tv" to "TV", "both" to "Both").forEach { (k, l) ->
-                FilterChip(
-                    selected = AdbManager.volumeMode == k,
-                    onClick = { AdbManager.changeVolumeMode(k) },
-                    label = { Text(l, fontSize = 11.sp) }
-                )
-            }
-        }
+        VolumeRow()
 
         // ── pad ──
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
-                selected = padMode, onClick = { padMode = true }, label = { Text("Touchpad") },
+                selected = padMode == 0, onClick = { padMode = 0 }, label = { Text("Cursor") },
+                leadingIcon = { Icon(Icons.Default.Mouse, null, Modifier.size(18.dp)) }
+            )
+            FilterChip(
+                selected = padMode == 1, onClick = { padMode = 1 }, label = { Text("Swipe") },
                 leadingIcon = { Icon(Icons.Default.TouchApp, null, Modifier.size(18.dp)) }
             )
-            FilterChip(selected = !padMode, onClick = { padMode = false }, label = { Text("D-pad") })
+            FilterChip(selected = padMode == 2, onClick = { padMode = 2 }, label = { Text("D-pad") })
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (padMode) Touchpad(Modifier.fillMaxSize()) else DPad(Modifier.fillMaxSize())
+            when (padMode) {
+                0 -> CursorArea(Modifier.fillMaxSize())
+                1 -> Touchpad(Modifier.fillMaxSize())
+                else -> DPad(Modifier.fillMaxSize())
+            }
         }
 
         // ── media ──
@@ -198,6 +206,217 @@ fun RemoteScreen() {
     }
 }
 
+// ───────────────────────── volume ─────────────────────────
+@Composable
+private fun VolumeRow() {
+    val cs = MaterialTheme.colorScheme
+    var menu by remember { mutableStateOf(false) }
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val known = AdbManager.isConnected && AdbManager.volume >= 0 && AdbManager.volumeMode != "tv"
+    val lo = AdbManager.volumeMin
+    val hi = AdbManager.volumeMax.coerceAtLeast(lo + 1)
+
+    LaunchedEffect(AdbManager.isConnected) {
+        while (AdbManager.isConnected) {
+            if (SystemClock.elapsedRealtime() - AdbManager.lastKeyTime > 3000) {
+                try { AdbManager.refreshVolume() } catch (_: Exception) {}
+            }
+            delay(5000)
+        }
+    }
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(Icons.Default.VolumeUp, null, Modifier.size(20.dp), tint = cs.onSurfaceVariant)
+        Slider(
+            value = (drag ?: AdbManager.volume.coerceAtLeast(lo).toFloat()).coerceIn(lo.toFloat(), hi.toFloat()),
+            onValueChange = { drag = it },
+            onValueChangeFinished = {
+                drag?.let { AdbManager.setVolumeTo(it.roundToInt()) }
+                drag = null
+            },
+            valueRange = lo.toFloat()..hi.toFloat(),
+            steps = (hi - lo - 1).coerceAtLeast(0),
+            enabled = known,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            if (known) "${(drag ?: AdbManager.volume.toFloat()).roundToInt()}" else "–",
+            fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(24.dp)
+        )
+        Box {
+            AssistChip(
+                onClick = { menu = true },
+                label = {
+                    Text(
+                        when (AdbManager.volumeMode) { "device" -> "Fire TV"; "tv" -> "TV"; else -> "Both" },
+                        fontSize = 12.sp
+                    )
+                }
+            )
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Fire TV / Device volume") },
+                    trailingIcon = { if (AdbManager.volumeMode == "device") Icon(Icons.Default.Check, null) },
+                    onClick = { menu = false; AdbManager.changeVolumeMode("device") }
+                )
+                DropdownMenuItem(
+                    text = { Text("TV volume (HDMI-CEC keys)") },
+                    trailingIcon = { if (AdbManager.volumeMode == "tv") Icon(Icons.Default.Check, null) },
+                    onClick = { menu = false; AdbManager.changeVolumeMode("tv") }
+                )
+                DropdownMenuItem(
+                    text = { Text("Both together") },
+                    trailingIcon = { if (AdbManager.volumeMode == "both") Icon(Icons.Default.Check, null) },
+                    onClick = { menu = false; AdbManager.changeVolumeMode("both") }
+                )
+            }
+        }
+    }
+}
+
+// ───────────────────────── cursor (mouse pointer on the TV) ─────────────────────────
+@Composable
+private fun CursorArea(modifier: Modifier) {
+    val scope = rememberCoroutineScope()
+    var step by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
+
+    LaunchedEffect(AdbManager.isConnected, AdbManager.deviceHost) {
+        if (AdbManager.isConnected) CursorClient.check()
+    }
+
+    if (CursorClient.ready) {
+        CursorPad(modifier)
+    } else {
+        TvCard(modifier = modifier) {
+            Icon(Icons.Default.Mouse, null, Modifier.size(36.dp), tint = cs.primary)
+            Spacer(Modifier.height(8.dp))
+            Text("Show a mouse cursor on your TV", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                "TVDeck installs a tiny helper on your TV. It draws a pointer you move with this touchpad, and clicks where you tap. One time setup, about 20 seconds.",
+                fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp)
+            )
+            Button(
+                enabled = !busy && AdbManager.isConnected,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        error = null
+                        error = AdbManager.setupCursorHelper { step = it }
+                        busy = false
+                        step = ""
+                        if (error == null) CursorClient.show(true)
+                    }
+                }
+            ) { Text(if (busy) "Setting up…" else "Set up cursor") }
+            if (busy) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(step, fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+            error?.let { Text(it, fontSize = 12.sp, color = cs.error, modifier = Modifier.padding(top = 8.dp)) }
+            if (!AdbManager.isConnected) Text("Connect to a TV first.", fontSize = 12.sp, color = cs.error)
+        }
+    }
+}
+
+@Composable
+private fun CursorPad(modifier: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    var finger by remember { mutableStateOf<Offset?>(null) }
+
+    DisposableEffect(Unit) {
+        CursorClient.show(true)
+        onDispose { CursorClient.show(false) }
+    }
+
+    Box(
+        modifier
+            .clip(RoundedCornerShape(32.dp))
+            .background(cs.surfaceVariant)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        finger = it
+                        tryAwaitRelease()
+                        finger = null
+                    },
+                    onTap = {
+                        CursorClient.click()
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    },
+                    onLongPress = {
+                        CursorClient.longClick()
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                val slop = viewConfiguration.touchSlop
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var moved = false
+                        do {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.size >= 2) {
+                                moved = true
+                                val pan = event.calculatePan()
+                                if (pan != Offset.Zero) {
+                                    CursorClient.scroll(pan.x * 1.4f, pan.y * 1.4f)
+                                    event.changes.forEach { it.consume() }
+                                }
+                            } else if (pressed.size == 1) {
+                                val c = pressed[0]
+                                if (!moved && (c.position - down.position).getDistance() > slop) moved = true
+                                if (moved) {
+                                    val d = c.positionChange()
+                                    if (d != Offset.Zero) {
+                                        val dt = (c.uptimeMillis - c.previousUptimeMillis).coerceAtLeast(1L)
+                                        val speed = d.getDistance() / dt
+                                        val gain = 1.7f * (1f + (speed * 0.35f).coerceAtMost(2.2f))
+                                        CursorClient.move(d.x * gain, d.y * gain)
+                                        c.consume()
+                                    }
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Mouse, null, Modifier.size(34.dp), tint = cs.onSurfaceVariant.copy(alpha = 0.5f))
+            Text("Slide to move the pointer", fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant)
+            Text(
+                "Tap = click   ·   Hold = long press   ·   2 fingers = scroll",
+                fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f)
+            )
+        }
+        AssistChip(
+            onClick = { CursorClient.center() },
+            label = { Text("Center", fontSize = 12.sp) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
+        )
+        val f = finger
+        if (f != null) {
+            Box(
+                Modifier
+                    .offset { IntOffset((f.x - 30.dp.toPx()).roundToInt(), (f.y - 30.dp.toPx()).roundToInt()) }
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(cs.primary.copy(alpha = 0.28f))
+            )
+        }
+    }
+}
+
+// ───────────────────────── swipe pad / d-pad ─────────────────────────
 @Composable
 private fun Touchpad(modifier: Modifier) {
     val cs = MaterialTheme.colorScheme

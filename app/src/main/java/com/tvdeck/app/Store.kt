@@ -2,6 +2,7 @@ package com.tvdeck.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -9,10 +10,12 @@ import androidx.compose.runtime.setValue
 
 data class SavedDevice(val name: String, val host: String, val port: Int)
 
-/** App-wide messages (shown as a snackbar) and a link shared from another app. */
+/** App-wide messages (shown as a snackbar) and things shared into the app from other apps. */
 object Shared {
     var message by mutableStateOf<String?>(null)
     var pendingLink by mutableStateOf<String?>(null)
+    var pendingText by mutableStateOf<String?>(null)
+    var pendingFiles by mutableStateOf<List<Uri>>(emptyList())
     fun say(m: String) { message = m }
 }
 
@@ -20,6 +23,8 @@ object Store {
     val devices = mutableStateListOf<SavedDevice>()
     val history = mutableStateListOf<String>()
     val macros = mutableStateListOf<Pair<String, String>>()
+    /** Apps the debloater turned off: package to method ("disabled" or "removed"). */
+    val removed = mutableStateListOf<Pair<String, String>>()
     private var prefs: SharedPreferences? = null
 
     fun load(ctx: Context) {
@@ -34,6 +39,10 @@ object Store {
         p.getString("macros", "")?.lines()?.forEach { l ->
             val a = l.split("\t", limit = 2)
             if (a.size == 2) macros.add(a[0] to a[1])
+        }
+        p.getString("removed", "")?.lines()?.forEach { l ->
+            val a = l.split("\t", limit = 2)
+            if (a.size == 2 && a[0].isNotBlank()) removed.add(a[0] to a[1])
         }
     }
 
@@ -51,6 +60,7 @@ object Store {
             ?.putString("devices", devices.joinToString("\n") { clean(it.name) + "\t" + it.host + "\t" + it.port })
             ?.putString("history", history.joinToString("\n") { clean(it) })
             ?.putString("macros", macros.joinToString("\n") { clean(it.first) + "\t" + clean(it.second) })
+            ?.putString("removed", removed.joinToString("\n") { clean(it.first) + "\t" + clean(it.second) })
             ?.apply()
     }
 
@@ -83,4 +93,15 @@ object Store {
     }
 
     fun removeMacro(m: Pair<String, String>) { macros.remove(m); persist() }
+
+    fun markRemoved(pkg: String, method: String) {
+        removed.removeAll { it.first == pkg }
+        removed.add(pkg to method)
+        persist()
+    }
+
+    fun unmarkRemoved(pkg: String) {
+        removed.removeAll { it.first == pkg }
+        persist()
+    }
 }
