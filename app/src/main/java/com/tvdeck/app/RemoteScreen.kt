@@ -125,12 +125,12 @@ fun RemoteScreen() {
                     DropdownMenuItem(
                         text = { Text("Auto (recommended)") },
                         trailingIcon = { if (AdbManager.injectPref == "auto") Icon(Icons.Default.Check, null) },
-                        onClick = { speedMenu = false; AdbManager.setInjectPref("auto") }
+                        onClick = { speedMenu = false; AdbManager.changeInjectPref("auto") }
                     )
                     DropdownMenuItem(
                         text = { Text("Compatible (slower)") },
                         trailingIcon = { if (AdbManager.injectPref == "compatible") Icon(Icons.Default.Check, null) },
-                        onClick = { speedMenu = false; AdbManager.setInjectPref("compatible") }
+                        onClick = { speedMenu = false; AdbManager.changeInjectPref("compatible") }
                     )
                 }
             }
@@ -154,7 +154,7 @@ fun RemoteScreen() {
             listOf("device" to "Fire TV / Device", "tv" to "TV", "both" to "Both").forEach { (k, l) ->
                 FilterChip(
                     selected = AdbManager.volumeMode == k,
-                    onClick = { AdbManager.setVolumeMode(k) },
+                    onClick = { AdbManager.changeVolumeMode(k) },
                     label = { Text(l, fontSize = 11.sp) }
                 )
             }

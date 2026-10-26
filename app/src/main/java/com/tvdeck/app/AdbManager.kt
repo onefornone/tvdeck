@@ -273,14 +273,14 @@ object AdbManager {
         }
     }
 
-    fun setInjectPref(p: String) {
+    fun changeInjectPref(p: String) {
         injectPref = p
         Store.setPref("inject", p)
         chooseMode()
         Shared.say(if (inject == Inject.INPUT) "Compatible mode" else "Fast mode on")
     }
 
-    fun setVolumeMode(m: String) {
+    fun changeVolumeMode(m: String) {
         volumeMode = m
         Store.setPref("vol", m)
     }
