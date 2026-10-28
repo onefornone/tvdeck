@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -121,6 +123,19 @@ fun FilesScreen() {
     var renaming by remember { mutableStateOf<FileEntry?>(null) }
     var deleting by remember { mutableStateOf<FileEntry?>(null) }
     var newFolder by remember { mutableStateOf(false) }
+    var storage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+
+    LaunchedEffect(AdbManager.isConnected) {
+        if (!AdbManager.isConnected) return@LaunchedEffect
+        try {
+            val t = AdbManager.shell("df -k /sdcard/ 2>/dev/null | tail -1").trim().split(Regex("\\s+"))
+            if (t.size >= 4) {
+                val total = (t[1].toLongOrNull() ?: 0L) * 1024
+                val used = (t[2].toLongOrNull() ?: 0L) * 1024
+                if (total > 0) storage = used to total
+            }
+        } catch (_: Exception) {}
+    }
 
     BackHandler(enabled = path.length > 1) {
         path = path.trimEnd('/').substringBeforeLast('/', "") + "/"
@@ -207,7 +222,7 @@ fun FilesScreen() {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Files", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("Files", fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium)
                 Text(path, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -216,6 +231,14 @@ fun FilesScreen() {
                     Icon(Icons.Default.ArrowUpward, "Up")
                 }
                 IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, "Refresh") }
+            }
+        }
+
+        storage?.let { (used, total) ->
+            TvCard {
+                Text("Internal storage", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                Text("${formatSize(used)} used of ${formatSize(total)}", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+                LinearProgressIndicator(progress = used.toFloat() / total.toFloat(), modifier = Modifier.fillMaxWidth())
             }
         }
 
@@ -233,6 +256,7 @@ fun FilesScreen() {
             AssistChip(
                 onClick = { picker.launch(arrayOf("*/*")) },
                 label = { Text("Upload") },
+                colors = AssistChipDefaults.assistChipColors(containerColor = cs.primaryContainer, labelColor = cs.onPrimaryContainer),
                 leadingIcon = { Icon(Icons.Default.Upload, null, Modifier.size(18.dp)) }
             )
             AssistChip(
@@ -309,8 +333,8 @@ private fun FileRow(e: FileEntry, onOpen: () -> Unit, onAction: (String) -> Unit
     Surface(
         onClick = { if (e.isDir) onOpen() else menu = true },
         shape = RoundedCornerShape(16.dp),
-        color = cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant),
+        color = Tone.card(),
+        border = null,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

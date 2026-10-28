@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
         Store.load(this)
         AdbManager.init(this)
         AppMeta.init(this)
+        NetBinder.start(this)
         handleIncoming(intent)
         setContent {
             TvDeckTheme {
@@ -50,6 +51,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Phone volume buttons control the TV while the Remote tab is open (can be switched off). */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if ((keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) &&
+            Shared.currentTab == 1 && AdbManager.isConnected && Store.getPref("phonevol", "1") == "1"
+        ) {
+            AdbManager.sendKey(if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) 24 else 25)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if ((keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) &&
+            Shared.currentTab == 1 && AdbManager.isConnected && Store.getPref("phonevol", "1") == "1"
+        ) return true
+        return super.onKeyUp(keyCode, event)
     }
 
     /** Things shared to TVDeck from other apps: links, text, files, APKs. */
@@ -95,6 +114,12 @@ fun TvDeckApp() {
         )
     }
 
+    val view = androidx.compose.ui.platform.LocalView.current
+    LaunchedEffect(tab) { Shared.currentTab = tab }
+    LaunchedEffect(tab) {
+        view.keepScreenOn = tab == 1 && Store.getPref("awake", "1") == "1"
+    }
+
     // Reconnect to the last TV automatically.
     LaunchedEffect(Unit) {
         if (!AdbManager.isConnected && Store.lastHost.isNotEmpty()) {
@@ -117,7 +142,7 @@ fun TvDeckApp() {
         snackbarHost = { SnackbarHost(snack) },
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = Tone.card()) {
                 tabs.forEachIndexed { i, t ->
                     NavigationBarItem(
                         selected = tab == i,

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -168,6 +171,7 @@ fun AppsScreen() {
         val n = nameOf(p)
         when (key) {
             "open" -> AdbManager.launchApp(p)
+            "pin" -> { Store.togglePin(p); Shared.say(if (Store.pins.contains(p)) "$n pinned to Remote" else "$n unpinned") }
             "stop" -> runCmd("am force-stop $p", "Stopped $n")
             "info" -> runCmd("am start -a android.settings.APPLICATION_DETAILS_SETTINGS -d package:$p", "")
             "copy" -> { clipboard.setText(AnnotatedString(p)); Shared.say("Package name copied") }
@@ -201,7 +205,7 @@ fun AppsScreen() {
         if (selected.isEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Apps", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Apps", fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium)
                     Text(
                         if (AppMeta.remaining > 0) "${counts[0]} apps  ·  loading names & icons (${AppMeta.remaining} left)"
                         else "${counts[0]} apps on your TV",
@@ -259,7 +263,11 @@ fun AppsScreen() {
             value = query, onValueChange = { query = it },
             placeholder = { Text("Search by name or package") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
-            singleLine = true, shape = RoundedCornerShape(18.dp),
+            singleLine = true, shape = RoundedCornerShape(28.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedContainerColor = Tone.card(), focusedContainerColor = Tone.card(),
+                unfocusedBorderColor = Color.Transparent
+            ),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -318,8 +326,8 @@ private fun AppRow(
     Surface(
         modifier = Modifier.fillMaxWidth().clip(shape).combinedClickable(onClick = onClick, onLongClick = onLong),
         shape = shape,
-        color = if (selected) cs.primaryContainer else cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant)
+        color = if (selected) cs.primaryContainer else Tone.card(),
+        border = null
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (icon != null) {
@@ -346,6 +354,7 @@ private fun AppRow(
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         MenuItem("Open", Icons.Default.PlayArrow) { menu = false; onMenu("open") }
+                        MenuItem(if (Store.pins.contains(app.pkg)) "Unpin from Remote" else "Pin to Remote", Icons.Default.Star) { menu = false; onMenu("pin") }
                         MenuItem("Force stop", Icons.Default.Stop) { menu = false; onMenu("stop") }
                         MenuItem("App info", Icons.Default.Info) { menu = false; onMenu("info") }
                         MenuItem("Clear data", Icons.Default.DeleteSweep) { menu = false; onMenu("clear") }

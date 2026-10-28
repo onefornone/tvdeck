@@ -168,7 +168,7 @@ object AppMeta {
 
     // ───────────── Google Play lookup ─────────────
     private fun httpGet(url: String, maxBytes: Int): ByteArray? {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = NetBinder.open(url) as HttpURLConnection
         try {
             conn.connectTimeout = 4000
             conn.readTimeout = 5000

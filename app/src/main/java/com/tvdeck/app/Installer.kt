@@ -50,7 +50,7 @@ fun isApkName(name: String): Boolean {
 object Installer {
     private fun download(url: String, out: File, progress: (Int) -> Unit) {
         var current = URL(url)
-        var conn = current.openConnection() as HttpURLConnection
+        var conn = NetBinder.open(current.toString()) as HttpURLConnection
         var redirects = 0
         while (true) {
             conn.connectTimeout = 15000
@@ -62,7 +62,7 @@ object Installer {
                 val loc = conn.getHeaderField("Location") ?: throw IllegalStateException("The link redirects nowhere")
                 conn.disconnect()
                 current = URL(current, loc)
-                conn = current.openConnection() as HttpURLConnection
+                conn = NetBinder.open(current.toString()) as HttpURLConnection
                 redirects++
                 continue
             }

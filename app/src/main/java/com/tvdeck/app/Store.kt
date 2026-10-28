@@ -15,6 +15,7 @@ object Shared {
     var message by mutableStateOf<String?>(null)
     var pendingLink by mutableStateOf<String?>(null)
     var pendingText by mutableStateOf<String?>(null)
+    var currentTab by mutableStateOf(0)
     var pendingFiles by mutableStateOf<List<Uri>>(emptyList())
     fun say(m: String) { message = m }
 }
@@ -25,6 +26,8 @@ object Store {
     val macros = mutableStateListOf<Pair<String, String>>()
     /** Apps the debloater turned off: package to method ("disabled" or "removed"). */
     val removed = mutableStateListOf<Pair<String, String>>()
+    /** Apps pinned to the Remote tab for one-tap launching. */
+    val pins = mutableStateListOf<String>()
     private var prefs: SharedPreferences? = null
 
     fun load(ctx: Context) {
@@ -40,6 +43,7 @@ object Store {
             val a = l.split("\t", limit = 2)
             if (a.size == 2) macros.add(a[0] to a[1])
         }
+        p.getString("pins", "")?.lines()?.filter { it.isNotBlank() }?.let { pins.addAll(it) }
         p.getString("removed", "")?.lines()?.forEach { l ->
             val a = l.split("\t", limit = 2)
             if (a.size == 2 && a[0].isNotBlank()) removed.add(a[0] to a[1])
@@ -60,6 +64,7 @@ object Store {
             ?.putString("devices", devices.joinToString("\n") { clean(it.name) + "\t" + it.host + "\t" + it.port })
             ?.putString("history", history.joinToString("\n") { clean(it) })
             ?.putString("macros", macros.joinToString("\n") { clean(it.first) + "\t" + clean(it.second) })
+            ?.putString("pins", pins.joinToString("\n"))
             ?.putString("removed", removed.joinToString("\n") { clean(it.first) + "\t" + clean(it.second) })
             ?.apply()
     }
@@ -93,6 +98,11 @@ object Store {
     }
 
     fun removeMacro(m: Pair<String, String>) { macros.remove(m); persist() }
+
+    fun togglePin(pkg: String) {
+        if (pins.contains(pkg)) pins.remove(pkg) else pins.add(pkg)
+        persist()
+    }
 
     fun markRemoved(pkg: String, method: String) {
         removed.removeAll { it.first == pkg }

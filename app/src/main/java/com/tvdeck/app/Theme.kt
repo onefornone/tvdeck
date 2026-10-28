@@ -8,50 +8,59 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val LightScheme = lightColorScheme(
-    primary = Color(0xFF0E7C7B),
+    primary = Color(0xFF00696B),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFCDEFEA),
-    onPrimaryContainer = Color(0xFF00302E),
-    secondary = Color(0xFF4F5BD5),
+    primaryContainer = Color(0xFFBDEFEE),
+    onPrimaryContainer = Color(0xFF002020),
+    secondary = Color(0xFF4A6363),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE0E2FF),
-    onSecondaryContainer = Color(0xFF111A66),
-    tertiary = Color(0xFFD97706),
-    background = Color(0xFFF2F7F6),
-    onBackground = Color(0xFF0F1D1C),
-    surface = Color.White,
-    onSurface = Color(0xFF0F1D1C),
-    surfaceVariant = Color(0xFFE2EEEC),
-    onSurfaceVariant = Color(0xFF3C5553),
-    outline = Color(0xFF7C9391),
-    outlineVariant = Color(0xFFD3E2DF),
-    error = Color(0xFFD93025),
-    errorContainer = Color(0xFFFFE1DE),
-    onErrorContainer = Color(0xFF5C0A05)
+    secondaryContainer = Color(0xFFCCE8E7),
+    onSecondaryContainer = Color(0xFF051F1F),
+    tertiary = Color(0xFF8A5100),
+    background = Color(0xFFF4FBFA),
+    onBackground = Color(0xFF161D1D),
+    surface = Color(0xFFF4FBFA),
+    onSurface = Color(0xFF161D1D),
+    surfaceVariant = Color(0xFFDAE5E4),
+    onSurfaceVariant = Color(0xFF3F4948),
+    outline = Color(0xFF6F7979),
+    outlineVariant = Color(0xFFBFC9C8),
+    error = Color(0xFFBA1A1A),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002)
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = Color(0xFF4FD8C4),
-    onPrimary = Color(0xFF00302B),
-    primaryContainer = Color(0xFF0F4C47),
-    onPrimaryContainer = Color(0xFFB8F5EC),
-    secondary = Color(0xFF9DAAFF),
-    onSecondary = Color(0xFF0E1659),
-    secondaryContainer = Color(0xFF2A3380),
-    onSecondaryContainer = Color(0xFFDDE0FF),
-    tertiary = Color(0xFFFFC857),
-    background = Color(0xFF081312),
-    onBackground = Color(0xFFE0F0EE),
-    surface = Color(0xFF0F1D1C),
-    onSurface = Color(0xFFE0F0EE),
-    surfaceVariant = Color(0xFF1B2F2D),
-    onSurfaceVariant = Color(0xFFA9C4C1),
-    outline = Color(0xFF5E7C79),
-    outlineVariant = Color(0xFF1F3533),
-    error = Color(0xFFFF8A80),
-    errorContainer = Color(0xFF5C1A15),
+    primary = Color(0xFF80D4D4),
+    onPrimary = Color(0xFF003737),
+    primaryContainer = Color(0xFF004F50),
+    onPrimaryContainer = Color(0xFFBDEFEE),
+    secondary = Color(0xFFB0CCCB),
+    onSecondary = Color(0xFF1B3534),
+    secondaryContainer = Color(0xFF324B4B),
+    onSecondaryContainer = Color(0xFFCCE8E7),
+    tertiary = Color(0xFFFFB95C),
+    background = Color(0xFF0E1514),
+    onBackground = Color(0xFFDDE4E3),
+    surface = Color(0xFF0E1514),
+    onSurface = Color(0xFFDDE4E3),
+    surfaceVariant = Color(0xFF3F4948),
+    onSurfaceVariant = Color(0xFFBEC9C8),
+    outline = Color(0xFF899392),
+    outlineVariant = Color(0xFF3F4948),
+    error = Color(0xFFFFB4AB),
+    errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6)
 )
+
+/** Tonal surfaces used for cards, buttons and the nav bar. */
+object Tone {
+    @Composable
+    fun card(): Color = if (isSystemInDarkTheme()) Color(0xFF1B2524) else Color(0xFFE6EFEE)
+
+    @Composable
+    fun high(): Color = if (isSystemInDarkTheme()) Color(0xFF263130) else Color(0xFFDAE5E4)
+}
 
 @Composable
 fun TvDeckTheme(content: @Composable () -> Unit) {

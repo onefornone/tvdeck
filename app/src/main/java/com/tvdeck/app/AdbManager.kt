@@ -144,6 +144,7 @@ object AdbManager {
             AppsCache.apps = emptyList()
             try { probeInput() } catch (_: Exception) { inject = Inject.INPUT }
             isConnected = true
+            startKeepAlive()
             deviceName
         } finally {
             connecting = false
@@ -405,6 +406,21 @@ object AdbManager {
         return parts.joinToString("; ")
     }
 
+    private var keepJob: Job? = null
+
+    /** Pings the TV now and then so the connection never goes cold (no first-press delay). */
+    private fun startKeepAlive() {
+        keepJob?.cancel()
+        keepJob = ioScope.launch {
+            while (isActive && isConnected) {
+                delay(15000)
+                if (SystemClock.elapsedRealtime() - lastKeyTime > 12000) {
+                    try { shellBlocking("echo 1") } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
     private val pending = AtomicInteger(0)
     private val keyChannel = Channel<Int>(Channel.UNLIMITED)
     private var worker: Job? = null
@@ -496,6 +512,25 @@ object AdbManager {
         Frame(bmp, bmp.width * sample, bmp.height * sample)
     }
 
+    suspend fun screencapTo(slot: Int) = withContext(Dispatchers.IO) {
+        val o = shellBlocking("screencap -p /data/local/tmp/tvdeck_live$slot.png 2>&1")
+        if (o.contains("not found", true)) throw IllegalStateException("This TV doesn't support screen capture")
+    }
+
+    suspend fun pullFrame(slot: Int, sample: Int): Frame? = withContext(Dispatchers.IO) {
+        val f = File(context.cacheDir, "tvdeck_live$slot.png")
+        conn().pull(f, "/data/local/tmp/tvdeck_live$slot.png")
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp = BitmapFactory.decodeFile(f.absolutePath, opts) ?: return@withContext null
+        Frame(bmp, bmp.width * sample, bmp.height * sample)
+    }
+
+    /** Taps the TV screen: instant through the cursor helper, otherwise through the slower input command. */
+    fun liveTap(x: Int, y: Int) { if (CursorClient.ready) CursorClient.tapAt(x, y) else tap(x, y) }
+    fun liveSwipe(x1: Int, y1: Int, x2: Int, y2: Int) {
+        if (CursorClient.ready) CursorClient.swipeAt(x1, y1, x2, y2, 250) else swipe(x1, y1, x2, y2)
+    }
+
     fun toggleRecording() {
         if (recording) {
             appScope.launch {
@@ -527,6 +562,7 @@ object AdbManager {
 
     // ───────────── on-TV cursor helper ─────────────
     const val HELPER_PKG = "com.tvdeck.helper"
+    const val HELPER_VERSION = 2
 
     fun helperBundled(): Boolean = try { context.assets.open("tvhelper.apk").close(); true } catch (e: Exception) { false }
 
@@ -538,7 +574,15 @@ object AdbManager {
                 return@withContext "This build of TVDeck doesn't include the cursor helper. Check the build log step \"Build TV cursor helper\"."
             }
             onStep("Checking the TV…")
-            val installed = shellBlocking("pm list packages $HELPER_PKG").contains("package:$HELPER_PKG")
+            var installed = shellBlocking("pm list packages $HELPER_PKG").contains("package:$HELPER_PKG")
+            if (installed) {
+                val v = Regex("versionCode=(\\d+)").find(shellBlocking("dumpsys package $HELPER_PKG | grep versionCode"))?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                if (v < HELPER_VERSION) {
+                    onStep("Updating the helper…")
+                    shellBlocking("pm uninstall $HELPER_PKG")
+                    installed = false
+                }
+            }
             if (!installed) {
                 onStep("Installing the helper on your TV…")
                 val f = File(context.cacheDir, "tvhelper.apk")
@@ -572,7 +616,7 @@ object AdbManager {
     // ───────────── discovery ─────────────
     suspend fun scan(): List<String> = withContext(Dispatchers.IO) {
         val cm = context.getSystemService(ConnectivityManager::class.java)
-        val lp = cm.getLinkProperties(cm.activeNetwork)
+        val lp = cm.getLinkProperties(NetBinder.network ?: cm.activeNetwork)
         val mine = lp?.linkAddresses?.map { it.address }?.firstOrNull { it is Inet4Address }?.hostAddress
             ?: return@withContext emptyList<String>()
         val prefix = mine.substringBeforeLast(".")

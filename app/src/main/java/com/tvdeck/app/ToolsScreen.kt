@@ -13,7 +13,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -36,10 +39,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.roundToInt
 import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
 
@@ -81,6 +86,14 @@ private fun ToolsHome(open: (String) -> Unit) {
     var showSleep by remember { mutableStateOf(false) }
     var showPower by remember { mutableStateOf(false) }
     var confirmPower by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var health by remember { mutableStateOf<TvInfo?>(null) }
+
+    LaunchedEffect(AdbManager.isConnected) {
+        while (AdbManager.isConnected) {
+            try { health = fetchInfo() } catch (_: Exception) {}
+            delay(8000)
+        }
+    }
 
     fun takeShot() {
         scope.launch {
@@ -116,13 +129,10 @@ private fun ToolsHome(open: (String) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Column {
-                Text("Tools", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    if (AdbManager.isConnected) AdbManager.deviceName else "Connect a TV to use these",
-                    fontSize = 12.sp, color = cs.onSurfaceVariant
-                )
-            }
+            ScreenTitle(if (AdbManager.isConnected) AdbManager.deviceName else "Connect a TV to use these", "Tools")
+        }
+        if (AdbManager.isConnected) {
+            item(span = { GridItemSpan(maxLineSpan) }) { HealthCard(health) }
         }
         items(tools, key = { it.id }) { t ->
             TvCard(
@@ -589,24 +599,76 @@ private fun InfoRow(label: String, value: String) {
 
 // ───────────────────────── LIVE VIEW ─────────────────────────
 @Composable
+private fun HealthCard(h: TvInfo?) {
+    val cs = MaterialTheme.colorScheme
+    TvCard {
+        Text("Device health", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        if (h == null) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))
+        } else {
+            HealthBar("Storage", if (h.storageTotal > 0) h.storageUsed.toFloat() / h.storageTotal else 0f, cs.primary)
+            HealthBar("Memory", if (h.memTotal > 0) h.memUsed.toFloat() / h.memTotal else 0f, cs.secondary)
+            HealthBar("CPU", h.load, cs.tertiary)
+        }
+    }
+}
+
+@Composable
+private fun HealthBar(label: String, value: Float, color: Color) {
+    val v = value.coerceIn(0f, 1f)
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(58.dp))
+        LinearProgressIndicator(progress = v, color = color, modifier = Modifier.weight(1f))
+        Text("${(v * 100).toInt()}%", fontSize = 12.sp, modifier = Modifier.width(40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
+}
+
+@Composable
 private fun LiveViewTool(onBack: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
     var running by remember { mutableStateOf(true) }
     var frame by remember { mutableStateOf<Frame?>(null) }
     var fps by remember { mutableStateOf("") }
+    var tapAt by remember { mutableStateOf<Offset?>(null) }
+    var tapKey by remember { mutableStateOf(0L) }
+    var settingUp by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) { if (AdbManager.isConnected) CursorClient.check() }
+    LaunchedEffect(tapKey) {
+        if (tapAt != null) {
+            delay(350)
+            tapAt = null
+        }
+    }
+
+    // Two screenshot buffers: the next picture is taken while the last one is still being copied.
     LaunchedEffect(running) {
+        var slot = 0
+        var pulling: Job? = null
+        var lastFrame = System.currentTimeMillis()
         while (running) {
-            val t0 = System.currentTimeMillis()
             try {
-                val f = AdbManager.capture(2)
-                if (f != null) frame = f
+                AdbManager.screencapTo(slot)
+                val s = slot
+                slot = 1 - slot
+                if (pulling?.isActive != true) {
+                    pulling = launch {
+                        try {
+                            val f = AdbManager.pullFrame(s, 2)
+                            if (f != null) {
+                                frame = f
+                                val now = System.currentTimeMillis()
+                                fps = "%.1f fps".format(1000f / (now - lastFrame).coerceAtLeast(1L))
+                                lastFrame = now
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
             } catch (e: Exception) {
                 Shared.say(e.message ?: "Capture failed")
                 running = false
             }
-            val dt = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
-            fps = "%.1f fps".format(1000f / dt)
         }
     }
 
@@ -614,10 +676,24 @@ private fun LiveViewTool(onBack: () -> Unit) {
         SubHeader("Live view", onBack)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Tap or swipe the picture to control the TV. Speed depends on your TV (about $fps).",
+                if (CursorClient.ready) "Instant taps on  ·  $fps" else "Taps are slow until you turn on instant taps  ·  $fps",
                 fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f)
             )
             FilledTonalButton(onClick = { running = !running }) { Text(if (running) "Pause" else "Resume") }
+        }
+        if (!CursorClient.ready) {
+            OutlinedButton(
+                enabled = !settingUp && AdbManager.isConnected,
+                onClick = {
+                    scope.launch {
+                        settingUp = true
+                        val err = AdbManager.setupCursorHelper { }
+                        settingUp = false
+                        Shared.say(err ?: "Instant taps are on")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (settingUp) "Setting up…" else "Turn on instant taps (installs the helper)") }
         }
         val f = frame
         if (f == null) {
@@ -625,38 +701,57 @@ private fun LiveViewTool(onBack: () -> Unit) {
         } else {
             val ratio = f.bitmap.width.toFloat() / f.bitmap.height.toFloat()
             val img = remember(f) { f.bitmap.asImageBitmap() }
-            Image(
-                bitmap = img,
-                contentDescription = "TV screen",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(ratio)
-                    .clip(RoundedCornerShape(16.dp))
-                    .pointerInput(f.fullW, f.fullH) {
-                        detectTapGestures { o ->
-                            AdbManager.tap((o.x / size.width * f.fullW).toInt(), (o.y / size.height * f.fullH).toInt())
-                        }
-                    }
-                    .pointerInput(f.fullW, f.fullH) {
-                        var sx = 0f
-                        var sy = 0f
-                        var ex = 0f
-                        var ey = 0f
-                        detectDragGestures(
-                            onDragStart = { sx = it.x; sy = it.y; ex = it.x; ey = it.y },
-                            onDrag = { change, d -> change.consume(); ex += d.x; ey += d.y },
-                            onDragEnd = {
-                                val w = size.width.toFloat()
-                                val h = size.height.toFloat()
-                                AdbManager.swipe(
-                                    (sx / w * f.fullW).toInt(), (sy / h * f.fullH).toInt(),
-                                    (ex / w * f.fullW).toInt(), (ey / h * f.fullH).toInt()
-                                )
+            Box(Modifier.fillMaxWidth().aspectRatio(ratio).clip(RoundedCornerShape(16.dp))) {
+                Image(
+                    bitmap = img,
+                    contentDescription = "TV screen",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(f.fullW, f.fullH) {
+                            detectTapGestures { o ->
+                                tapAt = o
+                                tapKey = System.nanoTime()
+                                AdbManager.liveTap((o.x / size.width * f.fullW).toInt(), (o.y / size.height * f.fullH).toInt())
                             }
-                        )
-                    },
-                contentScale = ContentScale.FillBounds
-            )
+                        }
+                        .pointerInput(f.fullW, f.fullH) {
+                            var sx = 0f
+                            var sy = 0f
+                            var ex = 0f
+                            var ey = 0f
+                            detectDragGestures(
+                                onDragStart = { sx = it.x; sy = it.y; ex = it.x; ey = it.y },
+                                onDrag = { change, d -> change.consume(); ex += d.x; ey += d.y },
+                                onDragEnd = {
+                                    val w = size.width.toFloat()
+                                    val h = size.height.toFloat()
+                                    AdbManager.liveSwipe(
+                                        (sx / w * f.fullW).toInt(), (sy / h * f.fullH).toInt(),
+                                        (ex / w * f.fullW).toInt(), (ey / h * f.fullH).toInt()
+                                    )
+                                }
+                            )
+                        },
+                    contentScale = ContentScale.FillBounds
+                )
+                val t = tapAt
+                if (t != null) {
+                    Box(
+                        Modifier
+                            .offset { IntOffset((t.x - 22.dp.toPx()).roundToInt(), (t.y - 22.dp.toPx()).roundToInt()) }
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(cs.primary.copy(alpha = 0.4f))
+                    )
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyBtn(4, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.ArrowBack, "Back") }
+            KeyBtn(3, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.Home, "Home") }
+            KeyBtn(82, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.Menu, "Menu") }
+            KeyBtn(25, Modifier.weight(1f).fillMaxHeight(), repeat = true, round = true) { Icon(Icons.Default.VolumeDown, "Volume down") }
+            KeyBtn(24, Modifier.weight(1f).fillMaxHeight(), repeat = true, round = true) { Icon(Icons.Default.VolumeUp, "Volume up") }
         }
     }
 }

@@ -2,77 +2,29 @@
 
 package com.tvdeck.app
 
+import android.content.Intent
 import android.os.SystemClock
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mouse
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.VolumeDown
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -82,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -101,77 +54,90 @@ fun RemoteScreen() {
     val cs = MaterialTheme.colorScheme
     var padMode by rememberSaveable { mutableStateOf(1) } // 0 cursor, 1 swipe, 2 d-pad
     var typing by rememberSaveable { mutableStateOf(false) }
-    var speedMenu by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    var phoneVol by remember { mutableStateOf(Store.getPref("phonevol", "1") == "1") }
+    var awake by remember { mutableStateOf(Store.getPref("awake", "1") == "1") }
     val fast = AdbManager.inject != Inject.INPUT
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // ── header ──
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Remote", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(8.dp).clip(CircleShape)
-                            .background(if (AdbManager.isConnected) Color(0xFF22C55E) else cs.error)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (AdbManager.isConnected) AdbManager.deviceName else "Not connected",
-                        fontSize = 12.sp, color = cs.onSurfaceVariant
-                    )
-                }
+            Text("Remote", fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(start = 4.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(Tone.card()).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (AdbManager.isConnected) Color(0xFF1B7F4B) else cs.error))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (AdbManager.isConnected) AdbManager.deviceName.take(18) + (if (fast) " · Fast" else "") else "Not connected",
+                    fontSize = 12.sp
+                )
             }
             Box {
-                AssistChip(
-                    onClick = { speedMenu = true },
-                    label = { Text(if (fast) "Fast" else "Standard") },
-                    leadingIcon = { Icon(Icons.Default.FlashOn, null, Modifier.size(18.dp)) }
-                )
-                DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Auto (recommended)") },
-                        trailingIcon = { if (AdbManager.injectPref == "auto") Icon(Icons.Default.Check, null) },
-                        onClick = { speedMenu = false; AdbManager.changeInjectPref("auto") }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Compatible (slower)") },
-                        trailingIcon = { if (AdbManager.injectPref == "compatible") Icon(Icons.Default.Check, null) },
-                        onClick = { speedMenu = false; AdbManager.changeInjectPref("compatible") }
-                    )
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Remote settings") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    RemoteMenuItem("Speed: Auto", AdbManager.injectPref == "auto") { AdbManager.changeInjectPref("auto") }
+                    RemoteMenuItem("Speed: Compatible (slower)", AdbManager.injectPref == "compatible") { AdbManager.changeInjectPref("compatible") }
+                    HorizontalDivider()
+                    RemoteMenuItem("Volume: Fire TV / Device", AdbManager.volumeMode == "device") { AdbManager.changeVolumeMode("device") }
+                    RemoteMenuItem("Volume: TV (HDMI-CEC keys)", AdbManager.volumeMode == "tv") { AdbManager.changeVolumeMode("tv") }
+                    RemoteMenuItem("Volume: Both together", AdbManager.volumeMode == "both") { AdbManager.changeVolumeMode("both") }
+                    HorizontalDivider()
+                    RemoteMenuItem("Phone volume buttons control TV", phoneVol) {
+                        phoneVol = !phoneVol
+                        Store.setPref("phonevol", if (phoneVol) "1" else "0")
+                    }
+                    RemoteMenuItem("Keep phone screen on", awake) {
+                        awake = !awake
+                        Store.setPref("awake", if (awake) "1" else "0")
+                    }
                 }
             }
         }
         if (AdbManager.isConnected && !fast) {
             Text(
-                "This TV only allows standard input, so buttons can take about a second. Everything still works.",
-                fontSize = 11.sp, color = cs.onSurfaceVariant
+                "This TV only allows standard input, so buttons can take about a second.",
+                fontSize = 11.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp)
             )
         }
 
         // ── power & volume ──
-        Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            KeyBtn(26, Modifier.weight(1f).fillMaxHeight(), tint = cs.error) { Icon(Icons.Default.PowerSettingsNew, "Power") }
-            KeyBtn(164, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.VolumeOff, "Mute") }
-            KeyBtn(25, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeDown, "Volume down") }
-            KeyBtn(24, Modifier.weight(1f).fillMaxHeight(), repeat = true) { Icon(Icons.Default.VolumeUp, "Volume up") }
+        Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            KeyBtn(26, Modifier.weight(1f).fillMaxHeight(), tint = cs.error, round = true) { Icon(Icons.Default.PowerSettingsNew, "Power") }
+            KeyBtn(164, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.VolumeOff, "Mute") }
+            KeyBtn(25, Modifier.weight(1f).fillMaxHeight(), repeat = true, round = true) { Icon(Icons.Default.VolumeDown, "Volume down") }
+            KeyBtn(24, Modifier.weight(1f).fillMaxHeight(), repeat = true, round = true) { Icon(Icons.Default.VolumeUp, "Volume up") }
         }
         VolumeRow()
 
-        // ── pad ──
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = padMode == 0, onClick = { padMode = 0 }, label = { Text("Cursor") },
-                leadingIcon = { Icon(Icons.Default.Mouse, null, Modifier.size(18.dp)) }
-            )
-            FilterChip(
-                selected = padMode == 1, onClick = { padMode = 1 }, label = { Text("Swipe") },
-                leadingIcon = { Icon(Icons.Default.TouchApp, null, Modifier.size(18.dp)) }
-            )
-            FilterChip(selected = padMode == 2, onClick = { padMode = 2 }, label = { Text("D-pad") })
+        if (Store.pins.isNotEmpty()) PinnedRow()
+
+        // ── pad mode (segmented) ──
+        Row(
+            Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, cs.outline, RoundedCornerShape(20.dp))
+        ) {
+            listOf("Cursor", "Swipe", "D-pad").forEachIndexed { i, l ->
+                Box(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .background(if (padMode == i) cs.primaryContainer else Color.Transparent)
+                        .clickable { padMode = i },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (padMode == i) {
+                            Icon(Icons.Default.Check, null, Modifier.size(16.dp), tint = cs.onPrimaryContainer)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(l, fontSize = 14.sp, fontWeight = if (padMode == i) FontWeight.Medium else FontWeight.Normal)
+                    }
+                }
+            }
         }
+
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (padMode) {
                 0 -> CursorArea(Modifier.fillMaxSize())
@@ -181,28 +147,60 @@ fun RemoteScreen() {
         }
 
         // ── media ──
-        Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KeyBtn(88, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.SkipPrevious, "Previous") }
-            KeyBtn(89, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.FastRewind, "Rewind") }
-            KeyBtn(85, Modifier.weight(1.3f).fillMaxHeight(), accent = true) { Icon(Icons.Default.PlayCircle, "Play or pause") }
-            KeyBtn(90, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.FastForward, "Fast forward") }
-            KeyBtn(87, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.SkipNext, "Next") }
+        Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            KeyBtn(88, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.SkipPrevious, "Previous") }
+            KeyBtn(89, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.FastRewind, "Rewind") }
+            KeyBtn(85, Modifier.weight(1.3f).fillMaxHeight(), accent = true, round = true) { Icon(Icons.Default.PlayArrow, "Play or pause", Modifier.size(30.dp)) }
+            KeyBtn(90, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.FastForward, "Fast forward") }
+            KeyBtn(87, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.SkipNext, "Next") }
         }
 
         // ── navigation ──
-        Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KeyBtn(4, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.ArrowBack, "Back") }
-            KeyBtn(3, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Home, "Home") }
-            KeyBtn(82, Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Menu, "Menu") }
-            ActionBtn(onClick = { AdbManager.openSettings() }, modifier = Modifier.weight(1f).fillMaxHeight()) {
-                Icon(Icons.Default.Settings, "Settings")
-            }
-            ActionBtn(onClick = { typing = !typing }, modifier = Modifier.weight(1f).fillMaxHeight(), selected = typing) {
-                Icon(Icons.Default.Keyboard, "Keyboard")
-            }
+        Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyBtn(4, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.ArrowBack, "Back") }
+            KeyBtn(3, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.Home, "Home") }
+            KeyBtn(82, Modifier.weight(1f).fillMaxHeight(), round = true) { Icon(Icons.Default.Menu, "Menu") }
+            ActionBtn(onClick = { AdbManager.openSettings() }, modifier = Modifier.weight(1f).fillMaxHeight()) { Icon(Icons.Default.Settings, "Settings") }
+            ActionBtn(onClick = { typing = !typing }, modifier = Modifier.weight(1f).fillMaxHeight(), selected = typing) { Icon(Icons.Default.Keyboard, "Keyboard") }
         }
 
         AnimatedVisibility(typing) { TypePanel() }
+    }
+}
+
+@Composable
+private fun RemoteMenuItem(label: String, checked: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, fontSize = 14.sp) },
+        trailingIcon = { if (checked) Icon(Icons.Default.Check, null) },
+        onClick = onClick
+    )
+}
+
+// ───────────────────────── pinned apps ─────────────────────────
+@Composable
+private fun PinnedRow() {
+    val cs = MaterialTheme.colorScheme
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        items(Store.pins.toList(), key = { it }) { pkg ->
+            LaunchedEffect(pkg) { AppMeta.request(AppItem(pkg, false, false)) }
+            val icon = AppMeta.icons[pkg]
+            val name = AppMeta.labels[pkg] ?: prettyName(pkg)
+            Column(
+                Modifier.width(60.dp).clip(RoundedCornerShape(14.dp)).clickable { AdbManager.launchApp(pkg) },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (icon != null) {
+                    Image(bitmap = icon, contentDescription = name, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit)
+                } else {
+                    val c = avatarColor(pkg)
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                        Text(name.take(1).uppercase(), color = c, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text(name, fontSize = 10.sp, maxLines = 1, color = cs.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -210,7 +208,6 @@ fun RemoteScreen() {
 @Composable
 private fun VolumeRow() {
     val cs = MaterialTheme.colorScheme
-    var menu by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Float?>(null) }
     val known = AdbManager.isConnected && AdbManager.volume >= 0 && AdbManager.volumeMode != "tv"
     val lo = AdbManager.volumeMin
@@ -225,7 +222,11 @@ private fun VolumeRow() {
         }
     }
 
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Tone.card()).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Icon(Icons.Default.VolumeUp, null, Modifier.size(20.dp), tint = cs.onSurfaceVariant)
         Slider(
             value = (drag ?: AdbManager.volume.coerceAtLeast(lo).toFloat()).coerceIn(lo.toFloat(), hi.toFloat()),
@@ -243,34 +244,10 @@ private fun VolumeRow() {
             if (known) "${(drag ?: AdbManager.volume.toFloat()).roundToInt()}" else "–",
             fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(24.dp)
         )
-        Box {
-            AssistChip(
-                onClick = { menu = true },
-                label = {
-                    Text(
-                        when (AdbManager.volumeMode) { "device" -> "Fire TV"; "tv" -> "TV"; else -> "Both" },
-                        fontSize = 12.sp
-                    )
-                }
-            )
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text("Fire TV / Device volume") },
-                    trailingIcon = { if (AdbManager.volumeMode == "device") Icon(Icons.Default.Check, null) },
-                    onClick = { menu = false; AdbManager.changeVolumeMode("device") }
-                )
-                DropdownMenuItem(
-                    text = { Text("TV volume (HDMI-CEC keys)") },
-                    trailingIcon = { if (AdbManager.volumeMode == "tv") Icon(Icons.Default.Check, null) },
-                    onClick = { menu = false; AdbManager.changeVolumeMode("tv") }
-                )
-                DropdownMenuItem(
-                    text = { Text("Both together") },
-                    trailingIcon = { if (AdbManager.volumeMode == "both") Icon(Icons.Default.Check, null) },
-                    onClick = { menu = false; AdbManager.changeVolumeMode("both") }
-                )
-            }
-        }
+        Text(
+            when (AdbManager.volumeMode) { "device" -> "Fire TV"; "tv" -> "TV"; else -> "Both" },
+            fontSize = 11.sp, color = cs.onSurfaceVariant
+        )
     }
 }
 
@@ -295,7 +272,7 @@ private fun CursorArea(modifier: Modifier) {
             Spacer(Modifier.height(8.dp))
             Text("Show a mouse cursor on your TV", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             Text(
-                "TVDeck installs a tiny helper on your TV. It draws a pointer you move with this touchpad, and clicks where you tap. One time setup, about 20 seconds.",
+                "TVDeck installs a tiny helper on your TV. It draws a pointer you move with this touchpad, clicks where you tap, and makes Live view taps instant. One-time setup, about 20 seconds.",
                 fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp)
             )
             Button(
@@ -327,16 +304,12 @@ private fun CursorPad(modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     var finger by remember { mutableStateOf<Offset?>(null) }
-
-    DisposableEffect(Unit) {
-        CursorClient.show(true)
-        onDispose { CursorClient.show(false) }
-    }
+    var speedMenu by remember { mutableStateOf(false) }
 
     Box(
         modifier
             .clip(RoundedCornerShape(32.dp))
-            .background(cs.surfaceVariant)
+            .background(Tone.high())
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -378,7 +351,7 @@ private fun CursorPad(modifier: Modifier) {
                                     if (d != Offset.Zero) {
                                         val dt = (c.uptimeMillis - c.previousUptimeMillis).coerceAtLeast(1L)
                                         val speed = d.getDistance() / dt
-                                        val gain = 1.7f * (1f + (speed * 0.35f).coerceAtMost(2.2f))
+                                        val gain = 1.7f * CursorClient.speed * (1f + (speed * 0.35f).coerceAtMost(2.2f))
                                         CursorClient.move(d.x * gain, d.y * gain)
                                         c.consume()
                                     }
@@ -391,12 +364,25 @@ private fun CursorPad(modifier: Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.Mouse, null, Modifier.size(34.dp), tint = cs.onSurfaceVariant.copy(alpha = 0.5f))
-            Text("Slide to move the pointer", fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant)
+            Icon(Icons.Default.Mouse, null, Modifier.size(36.dp), tint = cs.primary)
+            Text("Slide to move the pointer", fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 8.dp))
             Text(
-                "Tap = click   ·   Hold = long press   ·   2 fingers = scroll",
-                fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f)
+                "Tap = click · Hold = long press · 2 fingers = scroll",
+                fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)
             )
+            Text("The pointer hides itself after 3 seconds", fontSize = 11.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f), modifier = Modifier.padding(top = 2.dp))
+        }
+        Box(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+            AssistChip(onClick = { speedMenu = true }, label = { Text("Speed", fontSize = 12.sp) })
+            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                listOf("Slow" to 0.6f, "Normal" to 1.0f, "Fast" to 1.5f).forEach { (l, v) ->
+                    DropdownMenuItem(
+                        text = { Text(l) },
+                        trailingIcon = { if (CursorClient.speed == v) Icon(Icons.Default.Check, null) },
+                        onClick = { speedMenu = false; CursorClient.changeSpeed(v) }
+                    )
+                }
+            }
         }
         AssistChip(
             onClick = { CursorClient.center() },
@@ -442,7 +428,7 @@ private fun Touchpad(modifier: Modifier) {
     Box(
         modifier
             .clip(RoundedCornerShape(32.dp))
-            .background(cs.surfaceVariant)
+            .background(Tone.high())
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -496,9 +482,9 @@ private fun Touchpad(modifier: Modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 if (flashCode == 23) "Select" else if (flashCode == 4) "Back" else "Swipe to move",
-                fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant
+                fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant
             )
-            Text("Tap = select   ·   Hold = back", fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f))
+            Text("Tap = select · Hold = back", fontSize = 12.sp, color = cs.onSurfaceVariant.copy(alpha = 0.8f))
         }
         val f = finger
         if (f != null) {
@@ -535,6 +521,11 @@ private fun TypePanel() {
     val clip = LocalClipboardManager.current
     var text by remember { mutableStateOf("") }
 
+    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val t = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!t.isNullOrBlank()) text = t
+    }
+
     fun send() {
         if (text.isBlank()) return
         val t = text
@@ -549,12 +540,22 @@ private fun TypePanel() {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Type here — sent to the TV") },
+                placeholder = { Text("Type or speak — sent to the TV") },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(24.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() })
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                trailingIcon = {
+                    IconButton(onClick = {
+                        try {
+                            voice.launch(
+                                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            )
+                        } catch (e: Exception) { Shared.say("Voice typing isn't available on this phone") }
+                    }) { Icon(Icons.Default.Mic, "Voice typing") }
+                }
             )
             FilledIconButton(onClick = { send() }) { Icon(Icons.Default.Send, "Send") }
         }

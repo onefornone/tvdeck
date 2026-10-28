@@ -157,5 +157,11 @@ object CursorClient {
     fun click() = cmd("C")
     fun longClick() = cmd("L")
     fun center() = cmd("Z")
-    fun show(pinned: Boolean) = cmd(if (pinned) "V 1" else "V 0")
+    fun show(visible: Boolean) = cmd(if (visible) "V 1" else "V 0")
+    fun tapAt(x: Int, y: Int) = cmd("T $x $y")
+    fun swipeAt(x1: Int, y1: Int, x2: Int, y2: Int, ms: Int) = cmd("W $x1 $y1 $x2 $y2 $ms")
+
+    /** Cursor speed multiplier (slow 0.6 / normal 1.0 / fast 1.5). */
+    var speed by mutableStateOf(Store.getPref("cspeed", "1.0").toFloatOrNull() ?: 1f)
+    fun changeSpeed(v: Float) { speed = v; Store.setPref("cspeed", v.toString()) }
 }

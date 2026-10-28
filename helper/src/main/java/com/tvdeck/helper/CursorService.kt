@@ -22,7 +22,8 @@ import java.net.Socket
  * Draws a mouse cursor over everything on the TV and performs taps / scrolls.
  * The TVDeck phone app sends simple text commands over the local Wi-Fi network (port 7788):
  *   M dx dy   move the cursor        C   click          L   long click
- *   S dx dy   scroll / swipe         Z   centre cursor  V 1/0  keep cursor visible / auto-hide
+ *   S dx dy   scroll / swipe         Z   centre cursor  V 1/0  show / hide cursor
+ *   T x y     tap at screen point    W x1 y1 x2 y2 ms   swipe between screen points
  *   B back    H home                 P   ping
  */
 class CursorService : AccessibilityService() {
@@ -38,8 +39,7 @@ class CursorService : AccessibilityService() {
     private var sw = 1920
     private var sh = 1080
     @Volatile private var busy = false
-    @Volatile private var pinned = false
-    private val autoHide = Runnable { if (!pinned) cursor?.visibility = View.INVISIBLE }
+    private val autoHide = Runnable { cursor?.visibility = View.INVISIBLE }
 
     @Suppress("DEPRECATION")
     override fun onServiceConnected() {
@@ -110,6 +110,7 @@ class CursorService : AccessibilityService() {
         } catch (e: Exception) {
         } finally {
             try { s.close() } catch (e: Exception) {}
+            ui.post { cursor?.visibility = View.INVISIBLE }
         }
     }
 
@@ -128,16 +129,12 @@ class CursorService : AccessibilityService() {
                     showTemp()
                 }
             }
-            "V" -> {
-                pinned = p.getOrNull(1) == "1"
-                ui.post {
-                    if (pinned) {
-                        cursor?.visibility = View.VISIBLE
-                    } else {
-                        showTemp()
-                    }
-                }
-            }
+            "V" -> ui.post { if (p.getOrNull(1) == "1") showTemp() else cursor?.visibility = View.INVISIBLE }
+            "T" -> if (p.size >= 3) tapAt(p[1].toFloatOrNull() ?: 0f, p[2].toFloatOrNull() ?: 0f)
+            "W" -> if (p.size >= 6) swipeAt(
+                p[1].toFloatOrNull() ?: 0f, p[2].toFloatOrNull() ?: 0f,
+                p[3].toFloatOrNull() ?: 0f, p[4].toFloatOrNull() ?: 0f, p[5].toLongOrNull() ?: 250L
+            )
             "B" -> ui.post { performGlobalAction(GLOBAL_ACTION_BACK) }
             "H" -> ui.post { performGlobalAction(GLOBAL_ACTION_HOME) }
             "P" -> out.println("OK $sw $sh")
@@ -148,7 +145,7 @@ class CursorService : AccessibilityService() {
         val v = cursor ?: return
         v.visibility = View.VISIBLE
         ui.removeCallbacks(autoHide)
-        if (!pinned) ui.postDelayed(autoHide, 5000)
+        ui.postDelayed(autoHide, 3000)
     }
 
     private fun move(dx: Float, dy: Float) {
@@ -200,6 +197,27 @@ class CursorService : AccessibilityService() {
             }, null)
             if (!ok) busy = false
             showTemp()
+        }
+    }
+
+    private fun tapAt(x: Float, y: Float) {
+        val px = x.coerceIn(0f, (sw - 1).toFloat())
+        val py = y.coerceIn(0f, (sh - 1).toFloat())
+        ui.post {
+            val path = Path()
+            path.moveTo(px, py)
+            val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+            dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        }
+    }
+
+    private fun swipeAt(x0: Float, y0: Float, x1: Float, y1: Float, dur: Long) {
+        ui.post {
+            val path = Path()
+            path.moveTo(x0.coerceIn(0f, (sw - 1).toFloat()), y0.coerceIn(0f, (sh - 1).toFloat()))
+            path.lineTo(x1.coerceIn(0f, (sw - 1).toFloat()), y1.coerceIn(0f, (sh - 1).toFloat()))
+            val stroke = GestureDescription.StrokeDescription(path, 0, dur.coerceIn(60L, 1500L))
+            dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
         }
     }
 }

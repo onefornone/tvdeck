@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -79,15 +80,14 @@ fun TvCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    val color = MaterialTheme.colorScheme.surface
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    val shape = RoundedCornerShape(24.dp)
+    val color = Tone.card()
     if (onClick != null) {
-        Surface(onClick = onClick, modifier = modifier, shape = shape, color = color, border = border) {
+        Surface(onClick = onClick, modifier = modifier, shape = shape, color = color) {
             Column(Modifier.padding(16.dp), content = content)
         }
     } else {
-        Surface(modifier = modifier, shape = shape, color = color, border = border) {
+        Surface(modifier = modifier, shape = shape, color = color) {
             Column(Modifier.padding(16.dp), content = content)
         }
     }
@@ -121,6 +121,7 @@ fun KeyBtn(
     repeat: Boolean = false,
     accent: Boolean = false,
     tint: Color = Color.Unspecified,
+    round: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -130,7 +131,7 @@ fun KeyBtn(
     val bg = when {
         pressed -> cs.primary
         accent -> cs.primaryContainer
-        else -> cs.surfaceVariant
+        else -> Tone.card()
     }
     val fg = when {
         pressed -> cs.onPrimary
@@ -159,7 +160,7 @@ fun KeyBtn(
                 pressed = false
             })
         },
-        shape = RoundedCornerShape(22.dp),
+        shape = if (round) CircleShape else RoundedCornerShape(22.dp),
         color = bg,
         contentColor = fg
     ) {
@@ -175,7 +176,7 @@ fun ActionBtn(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Bool
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
-        color = if (selected) cs.primary else cs.surfaceVariant,
+        color = if (selected) cs.primary else Tone.card(),
         contentColor = if (selected) cs.onPrimary else cs.onSurfaceVariant
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
@@ -264,5 +265,20 @@ fun NotConnectedBanner(onClick: () -> Unit) {
                 fontSize = 13.sp
             )
         }
+    }
+}
+
+/** Large Material title used at the top of every page. */
+@Composable
+fun ScreenTitle(small: String, big: String, trailing: @Composable (() -> Unit)? = null) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(small, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(big, fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium)
+        }
+        trailing?.invoke()
     }
 }
