@@ -69,7 +69,7 @@ fun ToolsScreen() {
 private fun SubHeader(title: String, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(title, fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -85,6 +85,7 @@ private fun ToolsHome(open: (String) -> Unit) {
     var showLink by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showPower by remember { mutableStateOf(false) }
+    var showTheme by remember { mutableStateOf(false) }
     var confirmPower by remember { mutableStateOf<Pair<String, String>?>(null) }
     var health by remember { mutableStateOf<TvInfo?>(null) }
 
@@ -115,6 +116,7 @@ private fun ToolsHome(open: (String) -> Unit) {
         Tool("shell", "Shell", "Run commands, save shortcuts", Icons.Default.Code, Color(0xFF475569)),
         Tool("info", "Device info", "Storage, memory, network", Icons.Default.Info, Color(0xFF0284C7)),
         Tool("debloat", "Smart debloater", "Turn off apps you don't need", Icons.Default.DeleteSweep, Color(0xFF16A34A)),
+        Tool("theme", "Appearance", "Light, dark, Material You", Icons.Default.Palette, Color(0xFF7C3AED)),
         Tool("tune", "Speed & display", "Free memory, animations", Icons.Default.Tune, Color(0xFF059669)),
         Tool("link", "Open link on TV", "Send a URL or video", Icons.Default.Link, Color(0xFFD97706)),
         Tool("sleep", "Sleep timer", "Turn the TV off later", Icons.Default.NightsStay, Color(0xFF6366F1)),
@@ -138,7 +140,9 @@ private fun ToolsHome(open: (String) -> Unit) {
             TvCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    if (!AdbManager.isConnected) {
+                    if (t.id == "theme") {
+                        showTheme = true
+                    } else if (!AdbManager.isConnected) {
                         Shared.say("Connect to a TV first")
                     } else when (t.id) {
                         "shot" -> takeShot()
@@ -157,6 +161,8 @@ private fun ToolsHome(open: (String) -> Unit) {
             }
         }
     }
+
+    if (showTheme) AppearanceDialog { showTheme = false }
 
     shot?.let { f ->
         ShotDialog(f, onRetake = { shot = null; takeShot() }, onClose = { shot = null })

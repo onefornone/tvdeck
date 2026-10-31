@@ -77,6 +77,7 @@ fun RemoteScreen() {
                     fontSize = 12.sp
                 )
             }
+            ThemeButton()
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Remote settings") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

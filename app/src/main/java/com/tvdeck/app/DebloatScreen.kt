@@ -199,7 +199,7 @@ fun DebloatTool(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-            Text("Smart debloater", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("Smart debloater", fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             if (loading || working) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             else IconButton(onClick = { scope.launch { loadApps(); analyze() } }) { Icon(Icons.Default.Refresh, "Refresh") }
         }

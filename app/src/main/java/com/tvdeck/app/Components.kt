@@ -280,5 +280,6 @@ fun ScreenTitle(small: String, big: String, trailing: @Composable (() -> Unit)? 
             Text(big, fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium)
         }
         trailing?.invoke()
+        ThemeButton()
     }
 }

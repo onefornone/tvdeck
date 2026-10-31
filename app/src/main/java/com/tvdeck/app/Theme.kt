@@ -1,11 +1,28 @@
 package com.tvdeck.app
 
+import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF00696B),
@@ -53,19 +70,66 @@ private val DarkScheme = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD6)
 )
 
-/** Tonal surfaces used for cards, buttons and the nav bar. */
-object Tone {
-    @Composable
-    fun card(): Color = if (isSystemInDarkTheme()) Color(0xFF1B2524) else Color(0xFFE6EFEE)
+/** Appearance choices (saved on the phone). */
+object ThemeSettings {
+    var mode by mutableStateOf("system")   // system | light | dark
+    var dynamic by mutableStateOf(false)   // Material You wallpaper colours (Android 12+)
+
+    fun init() {
+        mode = Store.getPref("theme", "system")
+        dynamic = Store.getPref("dynamic", if (Build.VERSION.SDK_INT >= 31) "1" else "0") == "1"
+    }
+
+    fun changeMode(m: String) { mode = m; Store.setPref("theme", m) }
+    fun changeDynamic(v: Boolean) { dynamic = v; Store.setPref("dynamic", if (v) "1" else "0") }
 
     @Composable
-    fun high(): Color = if (isSystemInDarkTheme()) Color(0xFF263130) else Color(0xFFDAE5E4)
+    fun isDark(): Boolean = when (mode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
 }
+
+fun toneCard(cs: ColorScheme): Color = cs.surfaceVariant.copy(alpha = 0.55f).compositeOver(cs.surface)
+
+/** Tonal surfaces used for cards, buttons and the nav bar (works with any colour scheme). */
+object Tone {
+    @Composable
+    fun card(): Color = toneCard(MaterialTheme.colorScheme)
+
+    @Composable
+    fun high(): Color = MaterialTheme.colorScheme.surfaceVariant
+}
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(36.dp)
+)
 
 @Composable
 fun TvDeckTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkScheme else LightScheme,
-        content = content
-    )
+    val ctx = LocalContext.current
+    val dark = ThemeSettings.isDark()
+    val scheme = when {
+        ThemeSettings.dynamic && Build.VERSION.SDK_INT >= 31 ->
+            if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        dark -> DarkScheme
+        else -> LightScheme
+    }
+    val view = LocalView.current
+    SideEffect {
+        val w = (view.context as? Activity)?.window
+        if (w != null) {
+            w.statusBarColor = scheme.background.toArgb()
+            w.navigationBarColor = toneCard(scheme).toArgb()
+            val c = WindowCompat.getInsetsController(w, view)
+            c.isAppearanceLightStatusBars = !dark
+            c.isAppearanceLightNavigationBars = !dark
+        }
+    }
+    MaterialTheme(colorScheme = scheme, shapes = AppShapes, content = content)
 }

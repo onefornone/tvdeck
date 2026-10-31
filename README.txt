@@ -1,4 +1,4 @@
-TVDeck 3.0 – build instructions (no coding needed)
+TVDeck 3.1 – build instructions (no coding needed)
 
 1. Open your TVDeck repository on GitHub and delete the old files (or make a new repository).
 2. Upload everything inside this folder, including the hidden .github folder and the "helper" folder.
